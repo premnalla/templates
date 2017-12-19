@@ -1,0 +1,28 @@
+# Robert's pizza project.                              # Line  1
+SOURCE  = pizza.c pepperoni.c cheese.c\ 
+          mushrooms.c anchovies.c olives.c             # Line  2
+HEADERS = pizza.h topping.h                            # Line  3
+OBJECTS = ${SOURCE:.c=.o}                              # Line  4
+
+.PREFIXES = .c .o                                      # Line  6
+CC        = gcc
+CFLAGS    = -O -I${HOME}/include                       # Line  8
+RM        = /usr/bin/rm -f                             # Line  9
+MV        = /usr/bin/mv -f                             # Line 10
+CP        = /usr/bin/cp -f                             # Line 11
+
+.c.o:                                                  # Line 13
+    ${CC} -c ${CFLAGS} $<                              # Line 14
+	
+pizza: ${OBJECTS}                                      # Line 16
+    ${CC} -o $@ ${OBJECTS} -lm                         # Line 17
+	
+all: pizza                                             # Line 19
+
+clean:                                                 # Line 21
+    -${RM} pizza *.o core                              # Line 22
+	
+install: pizza                                         # Line 24
+    ${MV} pizza /usr/local/bin                         # Line 25
+    ${CP} ${HEADERS} /usr/local/include                # Line 26
+    @echo "Your pizza is ready!"                       # Line 27
