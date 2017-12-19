@@ -1,0 +1,136 @@
+
+NOTE: USE the ones with snmp_sess_XXX() instead of snmp_XXX() functions. This will
+      prevent the locking scheme use by NetSNMP.
+
+NOTE: most of the XXX_sess_YYY() functions take/return the following structure:
+See: axNetSnmpDataTypes.h - I've redefined these structs here...
+/*
+ * The list of active/open sessions.
+ */
+struct session_list {
+    struct session_list *next;
+    netsnmp_session *session;
+    netsnmp_transport *transport;
+    struct snmp_internal_session *internal;
+};
+
+/*
+ * Sets up the session with the snmp_session information provided by the user.
+ * Then opens and binds the necessary low-level transport.  A handle to the
+ * created session is returned (this is NOT the same as the pointer passed to
+ * snmp_open()).  On any error, NULL is returned and snmp_errno is set to the
+ * appropriate error code.
+ */
+/* don't use the one below. it locks the the session list */
+netsnmp_session * snmp_open(netsnmp_session *session);
+
+/*******************************************************************-o-******
+ * snmp_sess_open
+ *
+ * Parameters:
+ *  *in_session
+ *
+ * Returns:
+ *      Pointer to a session in the session list   -OR-   FIX -- right?
+ *  NULL on failure.
+ *
+ * The "spin-free" version of snmp_open.
+ */
+void * snmp_sess_open(netsnmp_session * pss);
+
+
+
+/*
+ * These functions send PDUs using an active session:
+ * snmp_send             - traditional API, no callback
+ * snmp_async_send       - traditional API, with callback
+ * snmp_sess_send        - single session API, no callback
+ * snmp_sess_async_send  - single session API, with callback
+ *
+ * Call snmp_build to create a serialized packet (the pdu).
+ * If necessary, set some of the pdu data from the
+ * session defaults.
+ * If there is an expected response for this PDU,
+ * queue a corresponding request on the list
+ * of outstanding requests for this session,
+ * and store the callback vectors in the request.
+ *
+ * Send the pdu to the target identified by this session.
+ * Return on success:
+ *   The request id of the pdu is returned, and the pdu is freed.
+ * Return on failure:
+ *   Zero (0) is returned.
+ *   The caller must call snmp_free_pdu if 0 is returned.
+ */
+/* snmp_open Does NOT lock the session list */
+int snmp_send(netsnmp_session * session, netsnmp_pdu *pdu);
+int snmp_sess_send(void *sessp, netsnmp_pdu *pdu)
+int snmp_async_send(netsnmp_session * session, netsnmp_pdu *pdu, snmp_callback callback, void *cb_data);
+static int _sess_async_send(void *sessp, netsnmp_pdu *pdu, snmp_callback callback, void *cb_data)
+int snmp_sess_async_send(void *sessp, netsnmp_pdu *pdu, snmp_callback callback, void *cb_data);
+
+
+
+/*
+ * Checks to see if any of the fd's set in the fdset belong to
+ * snmp.  Each socket with it's fd set has a packet read from it
+ * and snmp_parse is called on the packet received.  The resulting pdu
+ * is passed to the callback routine for that session.  If the callback
+ * routine returns successfully, the pdu and it's request are deleted.
+ */
+/* don't use this. it locks the session list */
+void snmp_read(fd_set * fdset);
+int _sess_read(void *sessp, fd_set * fdset);
+int snmp_sess_read(void *sessp, fd_set * fdset);
+
+
+
+/*
+ * Returns info about what snmp requires from a select statement.
+ * numfds is the number of fds in the list that are significant.
+ * All file descriptors opened for SNMP are OR'd into the fdset.
+ * If activity occurs on any of these file descriptors, snmp_read
+ * should be called with that file descriptor set
+ *
+ * The timeout is the latest time that SNMP can wait for a timeout.  The
+ * select should be done with the minimum time between timeout and any other
+ * timeouts necessary.  This should be checked upon each invocation of select.
+ * If a timeout is received, snmp_timeout should be called to check if the
+ * timeout was for SNMP.  (snmp_timeout is idempotent)
+ *
+ * The value of block indicates how the timeout value is interpreted.
+ * If block is true on input, the timeout value will be treated as undefined,
+ * but it must be available for setting in snmp_select_info.  On return,
+ * block is set to true if the value returned for timeout is undefined;
+ * when block is set to false, timeout may be used as a parmeter to 'select'.
+ *
+ * snmp_select_info returns the number of open sockets.  (i.e. The number of
+ * sessions open)
+ */
+/* This does NOT seem to lock the session list. HOWEVER, Do NOT use it!!! */
+int snmp_select_info(int *numfds, fd_set * fdset, struct timeval *timeout, int *block);
+/*
+ * Same as snmp_select_info, but works just one session.
+ */
+int snmp_sess_select_info(void *sessp, int *numfds, fd_set * fdset, struct timeval *timeout, int *block);
+
+
+
+
+/*
+ * snmp_timeout should be called whenever the timeout from snmp_select_info
+ * expires, but it is idempotent, so snmp_timeout can be polled (probably a
+ * cpu expensive proposition).  snmp_timeout checks to see if any of the
+ * sessions have an outstanding request that has timed out.  If it finds one
+ * (or more), and that pdu has more retries available, a new packet is formed
+ * from the pdu and is resent.  If there are no more retries available, the
+ *  callback for the session is used to alert the user of the timeout.
+ */
+/* don't use this. it locks the session list */
+void snmp_timeout(void);
+/* use this instead */
+void snmp_sess_timeout(void *sessp);
+
+
+
+

@@ -1,0 +1,90 @@
+Linux Scalability
+Doing large scale grid work, we regularlly press various limits of Linux and other systems. If you're in a situation where you're pushing various limits like open file descriptors and network sockets, here is how to ensure that the limits are large enough. 
+
+At several points I suggest making changes to the Linux kernel's configuration by echoing data into the /proc filesystem. This changes are transient and the system will reset to the default values on an reboot. As a result, you'll want to place these changes somewhere where they will be automatically reapplied on reboot. On many Linux systems, you can use the /etc/rc.d/rc.local script to do this. Depending on your particular configuration, you might also be able to the /etc/sysctl.conf, although you'll need to check the documentation for sysctl for the correct format. 
+
+System-wide file descriptors
+This is the number of concurrently open file descriptors throughout the system. It defaults to 8192. We've found it important to increase this for Globus head nodes and Condor-G submit nodes. 
+
+To see the current limit: 
+
+cat /proc/sys/fs/file-max
+To set the limit, as root run the following, replacing 32768 with your desired limit. 
+
+echo 32768 > /proc/sys/fs/file-max
+To have that automatically set, put the above line in your /etc/rc.d/rc.local (or the equivalent for your distribution). 
+
+For Linux 2.2.x based systems, you'll also want to consider the inode-max. On Linux 2.4.x, this no longer necessary. You adjusting similarlly to file-max, but you adjust /proc/sys/fs/inode-max. The Linux documentation suggests that inode-max be 4 or 5 times the file-max. Again, you'll want to add it to your rc.local or equivalent boot script. 
+
+echo 131072 > /proc/sys/fs/inode-max
+On some systems (this appears to be the case for all recent Red Hat distributions), you can instead add a line to your /etc/sysctl.conf. You would do this instead of the above commands. This will be the more natural solution for such systems, but you'll need to reboot the system or use the sysctl program for it to take effect. You need to append the following to your /etc/sysctl.conf: 
+
+# increase system file descriptor limit    
+fs.file-max = 32768
+To verify that the values are correctly set, you can use the following command: 
+
+cat /proc/sys/fs/file-max
+Per-process file descriptor limits
+Each user has per-process file descriptor limits. It defaults to 1024. Unfortunately users can only increase it to the hard limit, which is also 1024. Only root can increase the hard limit. We've found it important to increase this when starting the condor_master for Condor-G. 
+
+You can check the limit with: 
+
+ulimit -n # sh
+limit descriptors # csh
+You may be able to give each user a larger limit in the /etc/security/limits.conf file. This will only apply to Condor daemons started as the user in question. At the moment (October 2003) Condor will ignore these limits when run as root. Condor will likely take into account these limits in a future release. Something like the following will increase the user example's file limit: 
+
+john hard nofile 16384
+One way to increase it is to become root, increase the limit, switch back the user, and start the program you want it increased for: 
+
+su - root
+ulimit -n 16384 # if root uses sh
+limit descriptors 16384 # if root uses csh
+su - your_user_name
+program_to_run
+Or you can use a setuid root program to start your program. ulimiter.c is an example of such a program. Just modify it for your needs, compile it, and set the permissions. The program should have the root user, a group that only contains the user allowed to start the program, only allow the user to write it, allow the group to execute it, be setuid, and give no permissions to other users. 
+
+# Edit ulimiter.c to your needs.   Be sure to change:
+#  UID, GID, CONDOR_MASTER (to whatever binary you have)
+gcc ulimiter.c -o ulimiter
+chmod u+s ulimiter
+chmod o-rwx ulimiter
+chmod g-w ulimiter
+chown root ulimiter
+
+You can instead increase the limit for a user continuously. /etc/security/limits.conf contains the limits assigned by the login programs. Be sure to set both hard and soft for nofile (number of files). 
+
+Process Identifiers
+By default Linux wraps around the process identifiers when they exceed 32768. Increasing the interval between these rollovers is beneficial to ease process identifcation and process management within Condor (i.e., prevent fork() failures). You can find the current maximum pid number with: 
+
+cat /proc/sys/kernel/pid_max
+You can set the value higher (up to 2^22 on 32-bit machines: 4,194,304) with: 
+
+echo 4194303 > /proc/sys/kernel/pid_max
+WARNING: Increasing this limit may break programs that use the old-style SysV IPC interface and are linked against pre-2.2 glibcs. Although it is unlikely that you will run any of these programs. 
+
+Again, you'll want to add it to your rc.local or equivalent boot script to ensure this is reset on every boot. 
+
+On some systems (this appears to be the case for all recent Red Hat distributions), you can instead add a line to your /etc/sysctl.conf. You would do this instead of the above commands. This will be the more natural solution for such systems, but you'll need to reboot the system or use the sysctl program for it to take effect. You need to append the following to your /etc/sysctl.conf: 
+
+ #Allow for more PIDs (to reduce rollover problems); may break some programs
+kernel.pid_max = 4194303
+To verify that the values are correctly set, you can use the following command: 
+
+cat /proc/sys/kernel/pid_max
+Local port range
+If your system is opening lots of outgoing connections, you might run out of ports. If a program doesn't specify the source address, it comes out of a limited range. By default that range is 1024 to 4999, allowing 3975 simultaneous outgoing connections. We've found it important to increase this for Condor-G submit nodes. You can find the current range with: 
+
+cat /proc/sys/net/ipv4/ip_local_port_range
+You can set the range with: 
+
+echo 1024 65535 > /proc/sys/net/ipv4/ip_local_port_range
+Again, you'll want to add it to your rc.local or equivalent boot script to ensure this is reset on every boot. 
+
+On some systems (this appears to be the case for all recent Red Hat distributions), you can instead add a line to your /etc/sysctl.conf. You would do this instead of the above commands. This will be the more natural solution for such systems, but you'll need to reboot the system or use the sysctl program for it to take effect. You need to append the following to your /etc/sysctl.conf: 
+
+# increase system IP port limits
+net.ipv4.ip_local_port_range = 1024 65535
+To verify that the values are correctly set, you can use the following command: 
+
+cat /proc/sys/net/ipv4/ip_local_port_range
+

@@ -1,0 +1,295 @@
+   
+ Short Guide to install Oracle 10g on
+ Gentoo Linux (2004.0)
+--------------------------------------------------------------------------------
+ 
+Overview
+Is Oracle 10g running on GENTOO Linux? Yes, definitely! And it runs great, really. It's even easier to install than older Versions of Oracle as there are no problems with incompatible libc Library & other bugs. You need to make just two simple preparations before you can enjoy your new Development Database.
+
+Please note, that Oracle 10g is certified only on Redhat Enterprise Linux and United Linux, if you want to use 10g on Production Databases be prepared!
+ 
+Download
+GENTOO Linux (2004.0 - Kernel 2.4.25), click here for an Installation Guide.
+Download Oracle10g for Linux from OTN:
+http://otn.oracle.com/software/products/database/oracle10g/index.html
+
+NOTE:
+
+To install a Oracle Database 10g (without RAC) you only need to download the file ship.db.cpio.gz.
+
+Compute a cyclic redundancy check (CRC) checksum for the downloaded files and compare the checksum numbers against the numbers posted on OTN's website. For example:
+
+cksum ship.db.cpio.gz
+306399691 611574473 ship.db.cpio.gz   (OK!)
+
+Uncompress the downloaded file(s):
+
+gunzip ship.db.cpio.gz
+
+Unpack ship.db.cpio:
+
+cpio -idmv < ship.db.cpio
+Disk1/stage/Components/oracle.server/10.1.0.2.0/1/DataFiles/build.jar
+Disk1/stage/Components/oracle.server/10.1.0.2.0/1/DataFiles
+Disk1/stage/Components/oracle.server/10.1.0.2.0/1
+Disk1/stage/Components/oracle.server/10.1.0.2.0
+..............
+
+Requirements
+Checking Memory and Swap Space
+
+Oracle says that the system must have at least 512MB of RAM and 1GB of swap space or twice the size of RAM. And for systems with more than 2 GB of RAM, the swap space can be between one and two times the size of RAM. You might also want to check out Sizing Swap Space.
+
+To check the size of physical memory, execute:
+
+grep MemTotal /proc/meminfo
+MemTotal: 515700 kB
+
+To check the size of swap space, execute:
+
+grep SwapTotal /proc/meminfo
+SwapTotal: 1004052 kB
+
+You also can add temporary swap space to your system by creating a temporary swap file instead of using a raw device. Here is the procedure:
+
+su - root
+cd /root
+dd if=/dev/zero of=/root/tmpswp bs=1k count=500000
+500000+0 records in
+500000+0 records out
+chmod 600 tmpswp
+mkswap tmpswp
+Setting up swapspace version 1, size = 511995 kB
+swapon tmpswp
+grep SwapTotal /proc/meminfo
+SwapTotal: 1504044 kB
+
+Checking /tmp Space
+
+The Oracle Universal Installer requires up to 400 MB of free space in the /tmp directory. If you do not have enough space in the /tmp filesystem, you can temporarily create a tmp directory in another filesystem. Here is how you can do this (/u01 is another filesystem)
+
+su - root
+mkdir /u01/tmp
+chown root:root /u01/tmp
+chmod 1777 /u01/tmp
+export TEMP=/u01       # used by Oracle
+export TMPDIR=/u01     # used by Linux programs like the linker "ld"
+
+When you are done with the Oracle installation, shutdown Oracle and remove the temporary /tmp directory:
+
+su - root
+rmdir /u01/tmp
+unset TEMP
+unset TMPDIR
+
+Checking Kernel Parameters
+
+To see all kernel parameters, execute:
+
+su - root
+sysctl -a
+
+For Oracle10g, the following kernel parameters have to be set to values greater than or equal to the recommended values which can be changed in the proc filesystem:
+
+Needed                             Check with
+-----------------------------------------------------------------------------
+shmmax  = 2147483648               cat /proc/sys/kernel/shmmax
+shmmni  = 4096                     cat /proc/sys/kernel/shmmni
+shmall  = 2097152                  cat /proc/sys/kernel/shmall
+shmmin  = 1                        ipcs -lm |grep "min seg size"
+semmsl  = 250                      cat /proc/sys/kernel/sem | awk '{print $1}'
+semmns  = 32000                    cat /proc/sys/kernel/sem | awk '{print $2}'
+semopm  = 100                      cat /proc/sys/kernel/sem | awk '{print $3}'
+semmni  = 128                      cat /proc/sys/kernel/sem | awk '{print $4}'
+file-max = 65536                   cat /proc/sys/fs/file-max
+ip_local_port_range = 1024 65000   cat /proc/sys/net/ipv4/ip_local_port_range
+
+Do not change the value of any kernel parameter on a system where it is already higher than listed as minimum requirement. Oracle also recommends to set the local port range ip_local_port_range for outgoing messages to "1024 65000" which is needed for high-usage systems. This kernel parameter defines the local port range for TCP and UDP traffic to choose from.
+
+We added the following lines to the /etc/sysctl.conf file which is used during the boot process:
+
+# Kernel Parameters for Oracle 10.2.0
+kernel.shmall = 2097152
+kernel.shmmax = 2147483648
+kernel.shmmni = 4096
+kernel.sem = 250 32000 100 128
+fs.file-max = 65536
+net.ipv4.ip_local_port_range = 1024 65000
+net.core.rmem_default = 262144
+net.core.rmem_max = 262144
+net.core.wmem_default = 262144
+net.core.wmem_max = 262144
+
+Adding these lines to the /etc/sysctl.conf file will cause the system to change these kernel parameters after each boot using the /etc/init.d/bootmisc script which is invoked by /etc/inittab. But in order that these new added lines or settings in /etc/sysctl.conf become effective immediately, execute the following command:
+
+Configuring kernel parameters:
+
+su - root
+sysctl -p
+
+Creating Oracle User Account
+To create the oracle account and groups, execute the following commands:
+
+su - root
+groupadd dba         # group of users to be granted SYSDBA system privilege
+groupadd oinstall    # group owner of Oracle files
+useradd -c "Oracle Software Owner" -g oinstall -G dba oracle
+
+The oinstall Group
+
+The oinstall group is often needed for those organizations who have separate groups that maintain the software and the database. In this scenario, the group membership prevents unauthorized access to the database by personnel who maintain the software, and it prevents the database administrators from making changes to the software and the installations inventory directory.
+
+When using oinstall during the install of the software, one must set their default group to the one that will be maintaining the database before creating the database or permission problems will arise.
+
+Oinstall is not needed when the same people will be maintaining the software and the database. In this situation, it will create more work and add an extra layer of complexity to the maintenance of the installation.
+
+Recommendation: if you don't need the oinstall group for added security,  just install using the dba group.
+
+Setting Shell Limits for the Oracle User
+Most shells like Bash provide control over various resources like the maximum allowable number of open file descriptors or the maximum number of processes available to a user.
+
+To see all shell limits, run:
+
+$ ulimit -a
+
+Setting Limits for the Maximum Number of Open File Descriptors for the Oracle User
+
+After you changed and increased /proc/sys/fs/file-max (see: Checking Kernel Parameters), there is still a per user limit of open file descriptors which is set to 1024 by default:
+
+$ su - oracle
+$ ulimit -n
+1024
+
+To change this, you have to edit the file /etc/security/limits.conf as root and make the following changes or add the following lines, respectively:
+
+# To increase the shell limits for Oracle 10.1.0
+oracle soft nproc 2047
+oracle hard nproc 16384
+oracle soft nofile 1024
+oracle hard nofile 65536
+
+The «soft limit» in the first line defines the number of file handles or open files that the Oracle user will have after login. If the Oracle user gets error messages about running out of file handles, then the Oracle user can increase the number of file handles like in this example up to 63536 («hard limit») by running the following command:
+
+ulimit -n 63536
+
+Note that we do not recommend to set the «hard limit» for nofile for the oracle user equal to /proc/sys/fs/file-max. If you do that and the user uses up all the file handles, then the system would run out of file handles. This could mean that you won't be able to initiate new remote logins any more since the system won't be able to open any PAM modules which are required for performing a login. That's why we set the hard limit to 63536 and not to 65536.
+
+You also need to make sure that pam_limits is configured in the file /etc/pam.d/system-auth. This is the PAM module that will read the /etc/security/limits.conf file. The entry should read like:
+
+session required /lib/security/pam_limits.so
+session required /lib/security/pam_unix.so
+
+Now login to the oracle account again since the changes will become effective for new login sessions only.
+
+$ su - oracle
+$ ulimit -n
+4096
+
+Setting Limits for the Maximum Number of Processes for the Oracle User
+
+To see the current limit of the maximum number of processes for the oracle user, run:
+
+su - oracle
+ulimit -u
+
+To change the "soft" and "hard" limits for the maximum number of processes for the oracle user, add the following lines to the /etc/security/limits.conf file:
+
+# To increase the shell limits for Oracle 10.1.0
+*               soft    nproc   2047
+*               hard    nproc   16384
+*               soft    nofile  4096
+*               hard    nofile  63536
+
+Make Settings Permanent
+
+For the Bourne, Bash, or Korn shell, add the following lines to the $HOME/.bash_profile
+
+if [ $USER = "oracle" ]; then
+        if [ $SHELL = "/bin/ksh" ]; then
+              ulimit -p 16384
+              ulimit -n 63536
+        else
+              ulimit -u 16384 -n 63536
+        fi
+fi
+
+Setup Environment
+# Setup ORACLE environment ($ORACLE_HOME/.bash_profile)
+
+ORACLE_HOME=/opt/oracle/product/10.2.0; export ORACLE_HOME
+ORACLE_SID=GEN1; export ORACLE_SID
+ORACLE_TERM=xterm; export ORACLE_TERM
+ORACLE_OWNER=oracle; export ORACLE_OWNER
+TNS_ADMIN=/home/oracle/config/10.2.0 export TNS_ADMIN
+NLS_LANG=AMERICAN_AMERICA.WE8ISO8859P1; export NLS_LANG
+ORA_NLS10=${ORACLE_HOME}/nls/data; export ORA_NLS10
+CLASSPATH=${CLASSPATH}:${ORACLE_HOME}/jdbc/lib/classes12.zip
+LD_LIBRARY_PATH=${ORACLE_HOME}/lib; export LD_LIBRARY_PATH
+DISABLE_HUGETLBFS=1; export DISABLE_HUGETLBFS
+
+Installing Oracle10g
+As Oracle10g is certified only on Redhat Enterprise Linux and United Linux you will get this error when you run Oracle's runInstaller, and installation will stop:
+
+
+Checking operating system version: must be redhat-2.1,
+UnitedLinux-1.0 or redhat-3
+Failed <<<<
+
+Solution: You should be able to just do
+
+cd Disk1
+$ DISPLAY=<Any X-Window Host>:0.0
+$ export DISPLAY
+./runInstaller -ignoreSysPrereqs
+
+and then installer won't check for the operating system.
+
+Inventory Location: /opt/oracle/product/oraInventory
+Oracle Universal Installer in: /opt/oracle/product/oui
+
+Create your own Database
+Edit and save the CREATE DATABASE File initGEN1.sql in $ORACLE_HOME/dbs, or create a symbolic-Link from $ORACLE_HOME/dbs to your Location.
+
+$ cd $ORACLE_HOME/dbs
+$ ln -s /home/oracle/config/10.2.0/initGEN1.ora initGEN1.ora
+$ ls -l
+
+initGEN1.ora -> /home/oracle/config/10.1.0/initGEN1.ora
+
+First start the Instance, just to test your initGEN1.ora file for correct syntax and system resources.
+
+$ cd /home/oracle/config/10.2.0/
+$ sqlplus /nolog
+SQL> connect / as sysdba
+SQL> startup nomount
+SQL> shutdown immediate
+
+Now you can create the database
+
+SQL> @initGEN1.sql
+SQL> @shutdown immediate
+SQL> startup
+
+Check the Logfile: initGEN1.log
+
+Automatically Start / Stop the Database and Listener
+To start the Database automatically on Boot-Time, create or use our Startup Scripts dbora and lsnrora.
+
+su - root
+cp dbora lsnrora /etc/init.d
+rc-update add dbora default
+rc-update add lsnrora default
+
+Test your Database
+
+
+
+Enterprise Manager Console
+Create the Repository for the Enterprise Manager Console as follows:
+
+$ emca -repos create
+$ emca - -config dbcontrol db
+
+Download Scripts
+These Scripts can be used as Templates. Please note, that some Parameters like ORACLE_HOME, ORACLE_SID and PATH must be adjusted on your own Environment. Besides this, you should check the initSID.ora Parameters for your Database (Size, Archivelog, ...)
+

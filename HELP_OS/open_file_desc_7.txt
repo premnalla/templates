@@ -1,0 +1,166 @@
+What do I need to know about File Descriptors for best system stability?
+Please note that the advice below is provided only as a general introduction to issues related to file descriptors and is not a substitute for Operating System documentation. For detailed performance tuning advice unique to your system and projected traffic levels, our Professional Services Group can offer further information. Hardware vendors may like to consider our Performance Engineering Partnership program. 
+
+
+
+
+
+--------------------------------------------------------------------------------
+
+
+Introduction
+Before deploying a live system, load testing should be performed to identify any bottle necks in your hardware/OS/web server combination. 
+
+A common bottle neck in the default Operating System configuration is a lack of file descriptors. 
+
+A file descriptor is an object that a process uses to read or write to an open file and open network sockets (although there are other uses). 
+
+Operating Systems place limits on the number of file descriptors that a process may open. In addition to per-process limits, an OS will also have a global limit on the amount of file descriptors that all its processes together may consume. 
+
+Zeus Web Server uses 2 file descriptors per connection from a client so it is important to ensure that the Operating Systems on high traffic web sites have been configured to provide sufficient numbers of file descriptors to ZWS. 
+
+A lack of available file descriptors can cause a wide variety of symptoms which are not always easily traced back to this OS limit making it essential to tune the OS according before deploying a live service. 
+
+There are two ways to resolve the issue 
+
+Raise the OS limit on the number of available file descriptors 
+Run more zeus.web child processes 
+The first method is preferred as using more zeus.web child processes results in less cached data that can be shared with may impact performance negatively. 
+
+Configuring file descriptor limits is platform and even distribution specific so please consult your Operating System documentation for the definitive guide. As a convenience, we have provided a basic details for a number of platforms: 
+
+Linux 
+Solaris 
+HP-UX 
+Compaq Tru64 
+FreeBSD 
+The second method might be easier if you operating system does noteasily allow you to increase the file descriptors limit. Details ofhow to do this can be found on the tuningpage, where 'num_children' is the tunable in question. 
+
+
+
+--------------------------------------------------------------------------------
+
+
+File Descriptors under Linux
+Tuning file descriptor kernel parameters is non-trivial, and Zeus Support are only able to provide very general advice on how to do this: The best settings for any server will be unique to it and the load that it is designed to handle. 
+
+Global File Descriptor Tuning
+To examine your file descriptor usage as a snapshot in time, use the following 
+
+cat /proc/sys/fs/file-nrThree numbers will be returned, for example: 
+
+1022    427     8192
+|        |       |
+|        |       |
+|        |       maximum open file descriptors permitted
+|        total free allocated file descriptors
+total allocated file descriptors since boot
+A low value or even 0 in the second column would indicate a lack of available file descriptors. 
+
+In current (2.4+) Linux kernels, file descriptors are dynamically created as necessary, but cannot be removed or reduced other than by rebooting the server. 
+
+A very large number of file descriptiors (the maximum possible number of which is 2,147,483,647; although this is realistically limited to less than 536,870,912) could actually result in server instability due to lack of memory. 
+
+Process File Descriptor Tuning
+In addition to configuring system-wide global file-descriptor values, you must also consider per-process limits. 
+
+The following example describes how to raise the maximum number of file descriptors per process to 4096 on the RedHat distibution of Linux: 
+
+Allow all users to modify their file descriptor limits from an initial value of 1024 up to the maximum permitted value of 4096 by changing /etc/security/limits.conf 
+
+   *       soft    nofile  1024
+   *       hard    nofile  4096In /etc/pam.d/login, add: 
+
+   session required /lib/security/pam_limits.soIncrease the system-wide file descriptor limit by adding the following line to the /etc/rc.d/rc.local startup script: 
+
+   echo -n "8192" > /proc/sys/fs/file-maxor, on 2.6 kernels: 
+
+   echo -n "8192" > $( mount | grep sysfs | cut -d" " -f 3 )/fs/file-maxNow restart the system or run these commands from a command line to apply these changes. 
+
+You will then need to tell the system to use the new limits: 
+
+ulimit -n unlimited (bash)or 
+
+ulimit -n 65535 (bash)or
+
+unlimit descriptors (csh, tcsh).Verify this has raised the limit by checking the output of:
+
+ulimit -a (bash) or limit (csh, tcsh)Restart the web server using: 
+
+$ZEUSHOME/restart-zeusor by running:
+
+$ZEUSHOME/stop-zeusfollowed by: 
+
+$ZEUSHOME/start-zeus
+
+--------------------------------------------------------------------------------
+
+
+File Descriptors under Solaris
+To increase the OS limit, see your Solaris OS documentation. This SunWorld article describes the issues involved in more detail.
+
+In summary, the most important variable to change is the following:
+
+set rlim_fd_max = 8192
+
+which should be changed via the /etc/system file, to a higher value than it is currently set. 8192 should be enough for smaller sites, but your benchmarking may indicate that you need a higher value. 
+
+
+
+--------------------------------------------------------------------------------
+
+
+File Descriptors under HPUX
+To increase the number of file-descriptors under HPUX, you must use the 'sam' configuration tool provided by HP to adjust some of the system defaults. Go to the 'Kernel Configuration' page, then through to 'Configurable Parameters'. 
+
+The parameters that may need adjusting are:
+
+nfile Max number of open files
+maxfiles_lim Hard file limit per process
+ninode Max number of open inodes
+
+You can check the current limits by running the following command:
+
+sysdef | egrep "NAME|ninode|nfile|maxfiles_lim"The values that should be used depend greatly on how busy your site is. For extreme cases, values of up to 60000 may help greatly.
+
+Note that in some versions of 'sam', it will incorrectly report that nfile and maxfiles_lim cannot be raised higher than 2048. This is a bug with 'sam', contact HP for a newer version of the tool. 
+
+
+
+--------------------------------------------------------------------------------
+
+
+File Descriptors under Tru64
+On Compaq Tru64 UNIX, the webserver can now be configured to run with support for upto 64K file descriptors, instead of the default of 4096. Add the line: 
+
+tuning!maxfds 65536
+to $ZEUSHOME/web/global.cfg to raise the limit to its maximum. Smaller values can also be used; values over 4096 invoke the setsysinfo() call to raise the process's hard file limit to 64K. 
+
+
+
+--------------------------------------------------------------------------------
+
+
+File Descriptors under FreeBSD
+FreeBSD has a default limit of 1064 file descriptors per process and 1064 file descriptors in the entire system. Unfortunately, in order to raise the limit for sockets, it is necessary to recompile the kernel. 
+
+For help recompiling the kernel see the FreeBSD HandBook. In your new kernel configuration, the following options should be used. 
+
+options         MAXFILES="(64 * 1024)"
+options         NMBCLUSTERS=4096
+In order to raise the number of file descriptors per process, the following commands should be executed as root: 
+
+bash$ sysctl -w kern.maxfiles=65536
+kern.maxfiles: 1064 -> 65536
+bash$ sysctl -w kern.maxfilesperproc=32768
+kern.maxfilesperproc: 1064 -> 32768
+For a permanent change, add the following lines to the
+/etc/sysctl.conf file: 
+
+kern.maxfiles=65536             # System-wide limit
+kern.maxfilesperproc=32768      # Per-process limit
+In addition, you may need to check the default ulimit settings in
+/etc/login.conf.
+
+/etc/rc.sysctl is run on boot-time to parse /etc/sysctl.conf. 
+

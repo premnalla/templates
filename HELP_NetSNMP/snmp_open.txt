@@ -1,0 +1,18 @@
+
+struct host_t {
+  struct snmp_session *sess;    /* SNMP session data */
+  char *name;
+  int state;
+} hosts[MAX_HOSTS];
+
+{
+  host->sess = snmp_open(&sess)
+}
+
+In the above code you pass in a session variable on the stack and snmp_open()
+returns a heap allocated session.
+
+{
+  snmp_close(hosts->sess)
+}
+

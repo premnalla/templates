@@ -1,0 +1,105 @@
+
+Sequence of things to do
+----------------------------
+    init_usm_conf( "snmptrapd" );
+
+    /* ??? */
+    register_config_handler("snmptrapd", "snmpTrapdAddr",
+                            parse_trapd_address, free_trapd_address, "string");
+
+    /* do args ... */
+
+    /* do V3 stuff */
+
+    init_snmp("snmptrapd");
+
+    if (dofork && netsnmp_running) {
+        int             fd;
+
+        switch (fork()) {
+        case -1:
+            fprintf(stderr, "bad fork - %s\n", strerror(errno));
+            _exit(1);
+
+        case 0:
+            /*
+             * become process group leader
+             */
+            if (setsid() == -1) {
+                fprintf(stderr, "bad setsid - %s\n", strerror(errno));
+                _exit(1);
+            }
+
+            /*
+             * if we are forked, we don't want to print out to stdout or stderr
+             */
+            fd = open("/dev/null", O_RDWR);
+            dup2(fd, STDIN_FILENO);
+            dup2(fd, STDOUT_FILENO);
+            dup2(fd, STDERR_FILENO);
+            close(fd);
+            break;
+
+        default:
+            _exit(0);
+        }
+    }
+
+    SOCK_STARTUP;
+
+        transport = netsnmp_tdomain_transport(cp2, 1, "udp");
+
+            ss = snmptrapd_add_session(transport);
+
+    int tmpFd;
+    while (netsnmp_running) {
+        numfds = 0;
+        tmpFds = 0;
+        FD_ZERO(&readfds);
+        FD_ZERO(&writefds);
+        FD_ZERO(&writefds);
+        block = 0;
+        tvp = &timeout;
+        timerclear(tvp);
+        tvp->tv_sec = 5;
+        foreach session s {
+          snmp_sess_select_info(&tmpFds, &readfds, tvp, &block);
+          if (tmpFds > numfds) { 
+            numfds = tmpFds;
+          }
+        }
+        if (block == 1)
+            tvp = NULL;         /* block without timeout */
+        count = select(numfds, &readfds, &writefds, &exceptfds, tvp);
+        if (count > 0) {
+            netsnmp_dispatch_external_events(&count, &readfds, &writefds,
+                                             &exceptfds);
+            /* If there are any more events after external events, then
+             * try SNMP events. */
+            if (count > 0) {
+                snmp_read(&readfds);
+            }
+        } else
+            switch (count) {
+            case 0:
+                snmp_timeout();
+                break;
+            case -1:
+                if (errno == EINTR)
+                    continue;
+                snmp_log_perror("select");
+                netsnmp_running = 0;
+                break;
+            default:
+                fprintf(stderr, "select returned %d\n", count);
+                netsnmp_running = 0;
+            }
+  run_alarms();
+    }
+
+    snmptrapd_close_sessions(sess_list);
+    snmp_shutdown("snmptrapd");
+    snmp_disable_log();
+    SOCK_CLEANUP;
+
+

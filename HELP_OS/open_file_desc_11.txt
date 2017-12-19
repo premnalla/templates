@@ -1,0 +1,772 @@
+The following procedure is a step-by-step guide (Cookbook) with tips and information for installing Oracle Database 10g on SUSE Linux. 
+
+This guide shows how I installed: 
+- Oracle 10g Release 1 (10.1.0.3.0) on Novell SUSE Linux Enterprise Server 9 (SLES-9)
+- Oracle 10g Release 1 (10.1.0.3.0) on SUSE Linux Professional 9.1 (SLP-9.1)
+- Oracle 10g Release 1 (10.1.0.3.0) on SUSE Linux Professional 9.2 (SLP-9.2)
+- Oracle 10g Release 1 (10.1.0.3.0) on SUSE Linux Professional 9.3 (SLP-9.3)
+
+
+
+Validation/Certification
+
+Oracle10g is supported on SLES-9. For Validations/Certifications, go to Oracle's Certification Matrices. 
+
+
+This article covers the following subjects and steps: 
+
+* Downloading Novel SUSE Linux
+* Downloading Oracle10g Software and Burning Oracle10g CDs
+* Checking Memory and Swap Space
+* Checking /tmp Space
+* Checking Software Packages (RPMs)
+* Checking Kernel Parameters
+* Sizing Disk Space for Oracle10g
+* Creating Oracle User Accounts
+* Setting Shell Limits for the Oracle User
+* Creating Oracle Directories
+* Setting Oracle Environments
+* Installing Oracle10g
+    Installing Oracle10g on a Remote Linux Server
+    Starting Oracle Universal Installer
+    Using Oracle Universal Installer
+    Updates after Running Oracle Universal Installer
+* Oracle Post-installation Tasks
+    Startup and Shutdown of the Oracle10g Database
+    Shutdown of other Oracle 10g Background Processes
+* Tips and Hints for Oracle10g on Linux
+* Oracle10g/Linux Errors and Problems
+* References
+
+
+
+Downloading Novel SUSE Linux 
+For downloading SUSE Linux, see http://www.puschitz.com/LinuxDownload.shtml. 
+
+
+Downloading Oracle10g Software and Burning Oracle10g CDs 
+Download Oracle Database 10g for Linux at:
+http://www.oracle.com/technology/software/products/database/oracle10g/index.html 
+
+NOTE: To install a Oracle Database 10g (without RAC) you only need to download the file ship.db.lnx32.cpio.gz. 
+
+Compute a cyclic redundancy check (CRC) checksum for the downloaded files and compare the checksum numbers against the numbers posted on Oracle's download website. For example: 
+cksum ship.db.lnx32.cpio.gz
+Uncompress the downloaded file(s): 
+gunzip ship.db.lnx32.cpio.gz
+Unpack ship.db.lnx32.cpio: 
+$ cpio -idmv < ship.db.lnx32.cpio
+Disk1/stage/Components/oracle.server/10.1.0.3.0/1
+Disk1/stage/Components/oracle.server/10.1.0.3.0
+Disk1/stage/Components/oracle.server
+Disk1/stage/Components/oracle.tg/10.1.0.3.0/1/DataFiles
+Disk1/stage/Components/oracle.tg/10.1.0.3.0/1
+Disk1/stage/Components/oracle.tg/10.1.0.3.0
+Disk1/stage/Components/oracle.tg
+Disk1/stage/Components/oracle.assistants.dbca/10.1.0.3.0/1/DataFiles/doc.3.1.jar
+Disk1/stage/Components/oracle.assistants.dbca/10.1.0.3.0/1/DataFiles/class.jar
+...
+I executed the following command to burn the Disk1 directory on a CD: 
+# mkisofs -r Disk1 | cdrecord -v dev=0,0,0 speed=20 -
+(Drives' speed varies; you can get the dev numbers when you execute cdrecord -scanbus). 
+
+
+Checking Memory and Swap Space
+
+Oracle's documentation says that the Linux system must have at least 512MB of RAM and 1GB of swap space or twice the size of RAM. And for systems with more than 2 GB of RAM, the swap space can be between one and two times the size of RAM. You might also want to check out my recommendations about swap space at Sizing Swap Space. 
+
+To check the size of physical memory, execute: 
+grep MemTotal /proc/meminfo
+To check the size of swap space, execute: 
+grep SwapTotal /proc/meminfo
+
+
+You can also add temporary swap space to your system by creating a temporary swap file instead of using a raw device. Here is the procedure: 
+su - root
+dd if=/dev/zero of=tmpswap bs=1k count=900000
+chmod 600 tmpswap
+mkswap tmpswap
+swapon tmpswap
+To disable the temporary swap space execute the following commands: 
+su - root
+swapoff tmpswap
+rm tmpswap
+
+
+Checking /tmp Space
+
+According to Oracle's documentation, the Oracle Universal Installer (OUI) requires up to 400 MB of free space in the /tmp directory. But OUI checks if /tmp is only greater than 80 MB. 
+
+To check the space in /tmp, run: 
+$ df -h /tmp
+If you do not have enough space in the /tmp filesystem, you can temporarily create a tmp directory in another filesystem. Here is how you can do this: 
+su - root
+mkdir /<AnotherFilesystem>/tmp
+chown root.root /<AnotherFilesystem>/tmp
+chmod 1777 /<AnotherFilesystem>/tmp
+export TEMP=/<AnotherFilesystem>           # used by Oracle
+export TMPDIR=/<AnotherFilesystem>         # used by Linux programs like the linker "ld"
+When you are done with the Oracle installation, shutdown Oracle and remove the temporary /tmp directory: 
+su - root
+rmdir /<AnotherFilesystem>/tmp
+unset TEMP
+unset TMPDIR
+
+
+Checking Software Packages (RPMs)
+
+Before you install an Oracle 10g database, you need to check the system for required RPMs. For example, when I installed SLES-9 I selected "Minimum System" as my basic system which installs the OS without a graphical user interfcase and without any development packages. And by default, YaST installs less than 250 RPMs for a "Minimum System". This means that some required RPMs will be missing on the system if you selected e.g. a Minimum System". 
+
+The document Oracle Database Installation Guide 10g Release 1 (10.1) for UNIX Systems lists the following packages versions or higher for SLES-9: 
+kernel-2.6.5-7.5
+gcc-3.3.3-43
+gcc-c++-3.3.3-43
+glibc-2.3.3-98
+libaio-0.3.98-18
+libaio-devel-0.3.98-18
+make-3.80
+openmotif-libs-2.2.2-519.1
+
+
+Even though it's not mentioned in Oracle's installation guide, the openmotif package is also required. In fact, OUI checks for openmotif-2.1.30-11 or a higher version. 
+
+To verify whether these packages and versions are installed on the system, run 
+uname -r   # to get the kernel version
+rpm -q gcc gcc-c++ glibc libaio libaio-devel make openmotif openmotif-libs
+
+
+On my SLES-9 system I had to install the following RPMs and dependencies to meet the above software requirements: 
+
+CD 2: 
+  rpm -Uvh make-3.80-184.1.i586.rpm
+
+  rpm -Uvh libaio-0.3.98-18.3.i586.rpm
+
+  rpm -Uvh openmotif-libs-2.2.2-519.1.i586.rpm \
+           XFree86-libs-4.3.99.902-43.22.i586.rpm \
+           freetype2-2.1.7-53.5.i586.rpm \
+           fontconfig-2.2.92.20040221-28.13.i586.rpm \
+           expat-1.95.7-37.1.i586.rpm
+
+CD 3: 
+  rpm -Uvh gcc-3.3.3-43.24.i586.rpm \
+           gcc-c++-3.3.3-43.24.i586.rpm \
+           libstdc++-devel-3.3.3-43.24.i586.rpm \
+           glibc-devel-2.3.3-98.28.i686.rpm
+
+  rpm -Uvh openmotif-2.2.2-519.1.i586.rpm
+
+  rpm -Uvh libaio-devel-0.3.98-18.3.i586.rpm
+
+
+On my SLP-9.1 system I had to install the following RPMs and dependencies to meet the above software requirements: 
+
+CD 1: 
+  rpm -Uvh make-3.80-184.i586.rpm
+
+  rpm -Uvh openmotif-libs-2.2.2-515.i586.rpm \
+           XFree86-libs-4.3.99.902-40.i586.rpm \
+           freetype2-2.1.7-53.i586.rpm \
+           fontconfig-2.2.92.20040221-28.i586.rpm \
+           expat-1.95.7-37.i586.rpm
+
+  rpm -Uvh libaio-0.3.98-18.3.i586.rpm
+
+CD 3: 
+  rpm -Uvh gcc-3.3.3-41.i586.rpm \
+           gcc-c++-3.3.3-41.i586.rpm \
+           libstdc++-devel-3.3.3-41.i586.rpm \
+           glibc-devel-2.3.3-97.i686.rpm
+
+  rpm -Uvh openmotif-2.2.2-515.i586.rpm
+
+CD 5: 
+  rpm -Uvh libaio-0.3.98-17.i586.rpm \
+           libaio-devel-0.3.98-17.i586.rpm
+
+
+On my SLP-9.2 system I had to install the following RPMs and dependencies to meet the above software requirements: 
+
+CD 1: 
+  rpm -Uvh xorg-x11-libs-6.8.1-15.i586.rpm \
+           freetype2-2.1.9-3.i586.rpm \
+           fontconfig-2.2.96.20040728-9.i586.rpm \
+           expat-1.95.8-2.i586.rpm
+
+CD 2: 
+  rpm -Uvh openmotif-libs-2.2.3-6.i586.rpm
+
+  rpm -Uvh glibc-devel-2.3.3-118.i686.rpm
+
+CD 3: 
+  rpm -Uvh gcc-3.3.4-11.i586.rpm \
+           gcc-c++-3.3.4-11.i586.rpm \
+           libstdc++-devel-3.3.4-11.i586.rpm
+
+CD 4: 
+  rpm -Uvh openmotif-2.2.3-6.i586.rpm
+
+
+The libaio RPMs don't come with the SUSE Pro CDs. The libaio RPMs are needed if you relink Oracle for async I/O.
+If you don't have the DVD you can download the RPMs from here:
+ftp://mirror.mcs.anl.gov/pub/suse/i386/9.2/suse/i586/libaio-0.3.98-21.i586.rpm
+ftp://mirror.mcs.anl.gov/pub/suse/i386/9.2/suse/i586/libaio-0.3.98-21.i586.rpm
+For mirrors in your vicinity, see International Mirrors. 
+
+  rpm -Uvh libaio-0.3.98-21.i586.rpm \
+           libaio-devel-0.3.98-21.i586.rpm
+
+
+On my SLP-9.3 system I had to install the following RPMs and dependencies to meet the above software requirements: 
+
+CD 1: 
+  rpm -Uvh xorg-x11-libs-6.8.2-30.i586.rpm \
+           freetype2-2.1.9-4.i586.rpm \
+           fontconfig-2.2.99.20050218-8.i586.rpm
+
+CD 2: 
+  rpm -Uvh openmotif-libs-2.2.3-11.i586.rpm
+
+  rpm -Uvh glibc-devel-2.3.4-23.i686.rpm
+
+CD 3: 
+  rpm -Uvh gcc-3.3.5-5.i586.rpm \
+           gcc-c++-3.3.5-5.i586.rpm \
+           libstdc++-devel-3.3.5-5.i586.rpm
+
+CD 4: 
+  rpm -Uvh openmotif-2.2.3-11.i586.rpm
+
+
+The libaio RPMs don't come with the SUSE Pro CDs. The libaio RPMs are needed if you relink Oracle for async I/O.
+If you don't have the DVD you can't download it at the time of this writing. 
+
+
+Checking Kernel Parameters
+
+For an Oracle 10g database, some kernel parameters need to be changed to meet Oracle's requirements at Oracle Database Quick Installation Guide 10g Release 1 (10.1.0.3) for Linux x86. For Oracle10g, the following kernel parameters have to be set to values greater than or equal to the recommended values which can be changed in the proc filesystem: 
+shmmax  = 2147483648     (To verify, execute: cat /proc/sys/kernel/shmmax)
+shmall  = 2097152        (To verify, execute: cat /proc/sys/kernel/shmall)
+shmmni  = 4096           (To verify, execute: cat /proc/sys/kernel/shmmni)
+
+semmsl  = 250            (To verify, execute: cat /proc/sys/kernel/sem | awk '{print $1}')
+semmns  = 32000          (To verify, execute: cat /proc/sys/kernel/sem | awk '{print $2}')
+semopm  = 100            (To verify, execute: cat /proc/sys/kernel/sem | awk '{print $3}')
+semmni  = 128            (To verify, execute: cat /proc/sys/kernel/sem | awk '{print $4}')
+
+file-max = 65536         (To verify, execute: cat /proc/sys/fs/file-max)
+
+ip_local_port_range = 1024 65000 
+                         (To verify, execute: cat /proc/sys/net/ipv4/ip_local_port_range)
+
+To see the above kernel parameters with one command, you can type: 
+su - root
+sysctl -a |egrep "shmmax|shmall|shmmni|sem|file-max|ip_local_port_range"
+
+
+For ip_local_port_range Oracle recommends to set the local port range for outgoing messages to "1024 65000" which is needed for high-usage systems. This kernel parameter defines the local port range for TCP and UDP traffic to choose from. 
+For more information on shmmax, shmmni, and shmall, see Setting Shared Memory. 
+For more information on semmsl, semmni, semmns, and semopm, see Setting Semaphores. 
+For more information on filemax, see Setting File Handles. 
+
+NOTE: Do not change the value of any kernel parameter on a system where it is already higher than listed as minimum requirement. 
+
+For SLES-9, SLP-9.1, SLP-9.2, and SLP-9.3 I had to increase the kernel parameters shmmax, semopm, file-max, ip_local_port_range to meet the minimum requirement. To change these kernel parameters permanently, add the following lines below to the configuration file /etc/sysctl.conf. This file is used during the boot process to change default kernel settings. Note that in SLES-9 and SLP-9.1 the /etc/sysctl.conf file does not exist. Simply create the file if it does not exist on your system. 
+net.ipv4.ip_local_port_range=1024 65000
+kernel.sem=250 32000 100 128
+kernel.shmmax=2147483648
+fs.file-max=65536
+Or simply run the following command to add new kernel settings: 
+su - root 
+cat >> /etc/sysctl.conf << EOF
+kernel.shmmax=2147483648
+kernel.sem=250 32000 100 128
+fs.file-max=65536
+net.ipv4.ip_local_port_range=1024 65000
+EOF
+
+
+In SLES-9 and SLP-9.1 you also have to instruct SUSE Linux to read the /etc/sysctl.conf file during the boot process. This is done by enabling the boot.sysctl system service: 
+su - root
+# chkconfig boot.sysctl
+boot.sysctl  off
+# chkconfig boot.sysctl on
+# chkconfig boot.sysctl
+boot.sysctl  on
+#
+
+
+To load the new kernel settings from the /etc/sysctl.conf file without reboot, execute the following command: 
+su - root
+# sysctl -p
+kernel.shmmax = 2147483648
+kernel.sem = 250 32000 100 128
+fs.file-max = 65536
+net.ipv4.ip_local_port_range = 1024 65000
+#
+
+
+
+Sizing Disk Space for Oracle10g
+
+Oracle says that about 2.5 GB of disk space should be reserved for the Oracle software on Linux. 
+
+When I did an Oracle 10g Release 1 (10.1.0.3.0) "General Purpose Database" installation (not including any software from the Oracle Database 10g Companion CD), the Oracle software used about 1.3 GB of disk space, and the preconfigured "General Purpose Database" (datafiles, etc.) used about 710 MB of disk space. 
+$ du -m -s /u01
+1963    /u01
+$ du -m -s /u01/app/oracle/oradata
+720     /u01/app/oracle/oradata
+If you also install additional software from the Oracle Database 10g Companion CD, then add at least 1 GB of free disk space. 
+
+So if you install Oracle10g Enterprise Edition and additional software from the Oracle Database 10g Companion CD, then you need about 2.5 GB of disk for the Oracle software. And if you also want to add a preconfigured database on the same filesystem, make sure to add another 1 GB of disk space. 
+
+NOTE: If you don't put Oracle10g on a separate filesystems, then make sure the root filesystem "/" has enough disk space. You can check the free space of the root filesystem with the following command: 
+df -h /
+
+
+Using Automatic Storage Management (ASM)
+
+For more information on installing and configuring ASM, see Installing and Configuring Automatic Storage Management (ASM) and Disks. And for information on how to make use of ASM disk groups when running OUI, see Installing Oracle Database 10g with Real Application Cluster (RAC). 
+
+
+Creating Oracle User Accounts
+
+To create the oracle account and groups, execute the following commands: 
+su - root
+groupadd dba          # group of users to be granted SYSDBA system privilege
+groupadd oinstall     # group owner of Oracle files
+useradd -m -c "Oracle software owner" -g oinstall -G dba oracle
+passwd oracle
+For more information on the "oinstall" group account, see When to use "OINSTALL" group during install of oracle. 
+
+Note: On SUSE Linux Professional 9.1, the oracle home directory is not created automatically unless you use the -m option. The -m option can always be used on other OS versions as well. 
+
+
+Setting Shell Limits for the Oracle User
+
+Most shells like Bash provide control over various resources like the maximum allowable number of open file descriptors or the maximum number of processes available to a user. For more information on ulimit for the Bash shell, see man bash and search for ulimit. 
+
+If you just install a small test database, then you might be ok with the current settings (note that the limits vary very often). But for (larger) production databases, you should increase the following shell limits to the following values recommended by Oracle: 
+nofile = 65536     (To verify, execute: ulimit -n)
+nproc  = 16384     (To verify, execute: ulimit -u)
+
+The nofile option denotes the maximum number of open file descriptors, and nproc denotes the maximum number of processes available to a single user. 
+
+To see all shell limits, execute: 
+ulimit -a
+
+
+Oracle's suggestions for setting these shell parameters grants those increased parameters to everyone which is not recommended in secure environments. The following links will show how you can increase these parameters for the oracle account only: 
+
+For more information on nofile and how to increase the limit, see Setting Limits for the Maximum Number of Open File Descriptors for the Oracle User. Even though this procedure was written for Oracle9i on RHAS 2.1, it also applies to Oracle10g on SLES-9. 
+
+For more information on nproc and how to increase the limit, see Setting Limits for the Maximum Number of Processes for the Oracle User. Even though this procedure was written for Oracle9i on RHAS 2.1, it also applies to Oracle10g on SLES-9. 
+
+
+Creating Oracle Directories
+
+For Oracle10g you only need to create the directory for $ORACLE_BASE: 
+su - root
+mkdir -p /u01/app/oracle
+chown -R oracle.oinstall /u01
+
+
+But if you want to comply with Oracle's Optimal Flexible Architecture (OFA), then you don't want to place the database files in the /u01 directory but in another directory/filesystem/disk like /u02. This is not a requirement but if you want to comply with OFA, then you might want to create the following directories as well: 
+su - root
+mkdir -p /u02/oradata/orcl
+chown -R oracle.oinstall /u02
+In this example, "orcl" stands for the name of the database which will also be the name of the instance. This is typically the case for single instance databases. 
+
+For more information on OFA, see Optimal Flexible Architecture (OFA). 
+
+
+Setting Oracle Environments
+
+Since the Oracle Universal Installer (OUI) "runInstaller" is run from the oracle account, some environment variables must be configured for this account before OUI is started. 
+
+Execute the following commands for the Bash shell which is the default shell on SUSE Linux (to verify your shell run: echo $SHELL): 
+su - oracle
+export ORACLE_BASE=/u01/app/oracle
+export ORACLE_SID=orcl
+
+
+NOTE: If ORACLE_BASE is used, then Oracle recommends that you don't set the ORACLE_HOME environment variable but that you choose the default path suggested by the OUI. You can set and use ORACLE_HOME after you finished the Oracle installation. 
+
+Also, the environment variables ORACLE_HOME and TNS_ADMIN should not be set. If you've already set these environment variables, you can unset them by running the following commands: 
+unset ORACLE_HOME
+unset TNS_ADMIN
+
+To have these environment variables set automatically each time you login as oracle, you can add these environment variables to the ~oracle/.profile file which is the user startup file for the Bash shell on SUSE Linux. To do this you could simply copy/paste the following commands to make these settings permanent for your oracle's Bash shell: 
+su - oracle
+cat >> ~oracle/.profile << EOF
+export ORACLE_BASE=/u01/app/oracle
+export ORACLE_SID=orcl
+EOF
+
+
+
+Installing Oracle10g
+
+Installing Oracle10g on a Remote Linux Server
+
+If you don't install Oracle on your local system but on a remote server, then you need to relink X to your local desktop. The easiest way to do this is to use the "X11 forwarding" feature of ssh. This means that you don't have to run xhost and set the DISPLAY environment variable. 
+
+Here is an example how to use the "X11 forward" feature of SSH. Simply run the following command from your local desktop: 
+$ ssh -X oracle@oracle_remote_server_name
+Now when you run any GUI tools on the remote server, it should automatically be relinked to your local desktop. If this is not working, verify that forward X11 is not set to "no" in /etc/ssh/ssh_config on the remote server: 
+su - root
+grep ForwardX11 /etc/ssh/ssh_config
+#   ForwardX11 no
+ForwardX11Trusted yes
+
+If you are using telnet, however, you will have to set DISPLAY manually, see my other article about Starting runInstaller for more information. 
+
+
+Starting Oracle Universal Installer
+
+Insert the Oracle CD that contains the image of the downloaded file ship.db.lnx32.cpio.gz, or change to the directory that contains the image directory Disk1. 
+
+If you install Oracle10g from a CD, mount the CD by running the following commands in another terminal: 
+su - root
+mount /media/cdrom
+or 
+mount /media/dvd
+
+
+Before you execute runInstaller, make sure the Oracle environment variables are set, see Setting Oracle Environments. You can verify the settings by running the set command: 
+su - oracle
+oracle$ set
+To execute runInstaller from the mounted CD, run the following command as the oracle user: 
+oracle$ /media/cdrom/runInstaller
+
+or 
+oracle$ /media/dvd/runInstaller
+
+
+When I starteded runInstaller, the following error message was displayed: 
+   Checking monitor: must be configured to display at least 256 colors    Failed <<<<
+       >>> Could not execute auto check for display colors using command /usr/X11R6/bin/xdpyinfo. Check if the DISPLAY variable is set.
+
+   Some optional pre-requisite checks have failed (see above). Continue? (y/n) [n] y
+
+Since my system is configured to display more than 256 colors I ignored the error message and said yes to continue. 
+If you want to avoid this error message and fix it, go to Oracle10g/Linux Errors and Problems. 
+
+Sometimes when I started runInstaller, I got the following error message: 
+   Preparing to launch Oracle Universal Installer from /tmp/OraInstall2005-03-13_03-53-51PM. 
+   Please wait .../tmp/OraInstall2005-03-13_03-53-51PM/oui/lib/linux/libclntsh.so.9.0  bad CRC c0265abb  (should be f138c206)
+
+   Error in writing to directory /tmp/OraInstall2005-03-13_03-53-51PM. Please ensure that this directory is writable and 
+   has atleast 60 MB of disk space. Installation cannot continue.
+
+Simple try to restart runInstaller if you get this error message. 
+
+Using Oracle Universal Installer (OUI)
+
+The following example shows how to install Oracle10g Database Software and a "General Purpose" database: 
+
+ - Welcome Screen:   
+                     - Basic Installation:       Checked it which is the default
+                     - Oracle Home Location:     Use default: /u01/app/oracle/product/10.1.0/Db_1
+                     - Installation Type:        I used the default: Enterprise Edition
+                     - UNIX DBA Group:           Use default: dba
+                     - Create Starter Databases: I checked it for this example which is the default
+                       - Global Database Name:     orcl
+                       - Database password:        Type in the password for SYS, SYSTEM, SYSMAN, and DBSNMP accounts
+                     - Advanced Installation:    For this example I did not check it
+                     Click Next
+
+ - Specify Inventory directory and credentials:
+                     - Full path of the inventory directory: Use default: /u01/app/oracle/oraInventory
+                     - Specify Operating System group name:  Use default: oinstall
+                     Click Next
+
+ - A window pops up to run the orainstRoot.sh script:
+                     Run the script in another terminal:
+                       su - root
+                       # /u01/app/oracle/oraInventory/orainstRoot.sh
+                       Creating the Oracle inventory pointer file (/etc/oraInst.loc)
+                       Changing groupname of /u01/app/oracle/oraInventory to oinstall.
+                       #
+                     Click Continue
+
+ - Product-specific Prerequisite Checks:
+                     Verify that all checks have been passed.
+                     Make sure that the status of each Check is set to "Succeeded".
+                     If a check failed, see Oracle10g Installation Errors on Linux.
+                     Note that the "Retry" button doesn't work after you fixed one of the failed checks.
+                     Click Next
+
+ - Select Database Configuration:
+                     I selected "General Purpose".
+                     Click Next
+
+ - Specify Database Configuration Options:
+                     - Global Database Name: I used "orcl".
+                     - SID: I used "orcl".
+                     Click Next
+
+ - Select Database Management Option:
+                     I selected "Use Database Control for Database Management".
+                     Click Next
+
+ - Specify Database File Storage Option:
+                     I selected "File System".
+                     - File System
+                       - Specify Database file location: /u01/app/oracle/oradata/
+                           If you want to comply with OFA, you might want to select another mount point
+                           than '/u01', e.g. /u02/oradata.
+                     Click Next
+
+ - Specify Backup and Recovery Options:
+                     For my test installation I selected "Do no enable Automated Backups".
+                     Click Next
+
+ - Specify Database Schema Passwords:
+                     Make sure that the password(s) don't start with a digit number! Otherwise you
+                     will later get error message(s) like "ORA-00988 missing or invalid password".
+                     Click Next
+
+ - Summary:          Click Install
+
+                     If Enterprise manager configuration fails due to port allocation problems, 
+                     check out Oracle10g/Linux Errors and Problems.
+
+
+                     When a window pops up to run the root.sh script, execute the script
+                     in another terminal as root:
+
+                       su - root
+                       # /u01/app/oracle/product/10.1.0/Db_1/root.sh
+                       Running Oracle10 root.sh script...
+                       \nThe following environment variables are set as:
+                           ORACLE_OWNER= oracle
+                           ORACLE_HOME=  /u01/app/oracle/product/10.1.0/Db_1
+                       
+                       Enter the full pathname of the local bin directory: [/usr/local/bin]:
+                          Copying dbhome to /usr/local/bin ...
+                          Copying oraenv to /usr/local/bin ...
+                          Copying coraenv to /usr/local/bin ...
+                       
+                       \nCreating /etc/oratab file...
+                       Adding entry to /etc/oratab file...
+                       Entries will be added to the /etc/oratab file as needed by
+                       Database Configuration Assistant when a database is created
+                       Finished running generic part of root.sh script.
+                       Now product-specific root actions will be performed.
+                       /var/opt/oracle does not exist. Creating it now.
+                       /etc/oracle does not exist. Creating it now.
+                       Successfully accumulated necessary OCR keys.
+                       Creating OCR keys for user 'root', privgrp 'root'..
+                       Operation successful.
+                       Oracle Cluster Registry for cluster has been initialized
+                       
+                       Adding to inittab
+                       Checking the status of Oracle init process...
+                       Expecting the CRS daemons to be up within 600 seconds.
+                       CSS is active on these nodes.
+                               mars
+                       CSS is active on all nodes.
+                       Oracle CSS service is installed and running under init(1M)
+                       #
+
+                     Click OK
+
+ - End of Installation:
+                     Click Exit
+
+
+
+Updates after Running Oracle Universal Installer
+
+After Oracle10g has been installed, make sure that ORACLE_HOME, PATH, and LD_LIBRARY_PATH are set for the oracle account. 
+
+Note that the path for ORACLE_HOME might be different on your system!
+Also note that LD_LIBRARY_PATH is needed for some Oracle binaries such as sysresv! 
+
+For 10g (10.1.0.3) on my system: 
+su - oracle
+$ cat >> ~oracle/.profile << EOF
+export ORACLE_HOME=\$ORACLE_BASE/product/10.1.0/Db_1
+export PATH=$PATH:\$ORACLE_HOME/bin
+export LD_LIBRARY_PATH=\$ORACLE_HOME/lib
+EOF
+. ~oracle/.profile
+
+This commmand will add the environment variables to the ~oracle/.profile and source in the file for the current shell by executing ". ~oracle/.profile". 
+
+NOTE: Do not add a trailing "/" on the ORACLE_HOME environment variable. Otherwise you will get the error "ORACLE not available" when you try to connect to sys, see Oracle10g/Linux Errors and Problems for more information. 
+
+
+Oracle Post-installation Tasks
+
+Before you continue, make sure you followed the steps at Updates after Running Oracle Universal Installer. 
+
+
+Startup and Shutdown of the Oracle10g Database
+
+To startup the database: 
+oracle$ sqlplus /nolog
+SQL> connect / as sysdba
+SQL> startup
+To shutdown the database: 
+oracle$ sqlplus /nolog
+SQL> connect / as sysdba
+SQL> shutdown
+The slash connects you to the schema owned by SYS. In the above example you will be connected to the schema owned by SYS with the privilege SYSDBA. SYSDBA gives you the following privileges: 
+  - sysoper privileges WITH ADMIN OPTION
+  - create database
+  - recover database until
+
+
+Shutdown of other Oracle 10g Background Processes
+
+If you installed a preconfigured database using OUI, then several Oracle background processes are now running on your server. Execute the following command to see the background processes: 
+ps auxww
+
+
+To shutdown the Oracle background processes after an Oracle Database 10g installation, you can execute the following commands: 
+
+
+iSQL*Plus 
+To stop iSQL*Plus, run: 
+su - oracle
+isqlplusctl stop
+Database Management Processes 
+During the installation of Oracle 10g, OUI offered two Database Management Options: 
+
+If you selected "Database Control for Database Management", then the Oracle Enterprise Manager Database Control (Database Control) can be shutdown with the following command which stops both the agent and the Oracle Containers for Java (OC4J) management service: 
+su - oracle
+emctl stop dbconsole
+If you selected "Grid Control for Database Management" which is used for full "Grid Control" installations, then the Oracle Management Agent (standalone agent) for the Oracle Enterprise Manager Grid Control (Grid Control) can be stopped with the following command: 
+su - oracle
+emctl stop agent
+Oracle Net Listener 
+To stop the listener, run: 
+su - oracle
+lsnrctl stop
+Cluster Synchronization Services (CSS) 
+To shutdown Oracle CSS daemon, run: 
+su - root
+/etc/init.d/init.cssd stop
+
+
+Tips and Hints for Oracle10g on Linux
+
+To reinstall Oracle10g after a failed installation attempt, you might want to execute the following commands. 
+Make sure you first use the De-installation option in OUI. 
+su - root
+
+export ORACLE_HOME=/u01/app/oracle/product/10.1.0/Db_1
+. $ORACLE_HOME/bin/localconfig delete    # stops the Oracle CSS daemon and deletes configuration
+
+rm -rf /u01/app/oracle/*
+
+rm -rf /etc/oracle
+rm -f /etc/oraInst.loc /etc/oratab
+rm -f /etc/inittab.cssd
+rm -f /usr/local/bin/coraenv /usr/local/bin/dbhome /usr/local/bin/oraenv
+
+Make also sure to unset and uncomment ORACLE_HOME from ~oracle/.profile. 
+
+
+Oracle10g/Linux Errors and Problems
+
+Here is a list of common Oracle10g installation problems and other issues. 
+
+Note that most of the issues are due to not following the installation procedure correctly. And some errors are due to not using an Oracle supported Linux OS. 
+
+The Installation log file can be found in $ORACLE_BASE/oraInventory/logs. 
+The Database Creation log file can be found in $ORACLE_BASE/admin/$ORACLE_SID/create. 
+
+
+
+Checking monitor: must be configured to display at least 256 colors    Failed <<<<
+  >>> Could not execute auto check for display colors using command /usr/X11R6/bin/xdpyinfo. Check if the DISPLAY variable is set.
+
+  Some optional pre-requisite checks have failed (see above). Continue? (y/n) [n]
+
+I ignored this error message on my system and said "Yes" to continue.
+
+But if you want to fix it and get rid of this error message, ensure the following RPMS are installed: 
+rpm -q XFree86 xf86tools cabextract libpng libjpeg XFree86-Mesa
+
+Example for installing these packages on SLES-9 (packages can be found on the 2nd CD): 
+su - root
+rpm -Uvh XFree86-4.3.99.902-43.22.i586.rpm \
+         XFree86-Mesa-4.3.99.902-43.22.i586.rpm \
+         xf86tools-0.1-955.5.i586.rpm \
+         cabextract-1.0-17.1.i586.rpm \
+         libpng-1.2.5-182.4.i586.rpm \
+         libjpeg-6.2.0-731.1.i586.rpm
+
+
+Enterprise manager configuration failed due to the following error - 
+  Failed to allocate port(s) int the specified range for the following process(es):
+  JMS [5540-5559], RMI [5520-5539], Database Control [5500-5519], EM agent [1830-1849]
+
+The problem is that ports listed in /etc/services are discounted.
+The workaround is to specify the ports manually, see emca -h. 
+Use the following options and use the port ranges as specified in the above error message: 
+  emca -RMI_PORT <port> -JMS_PORT <port> -AGENT_PORT <port> -DBCONSOLE_HTTP_PORT <port>
+
+ORA-01034: ORACLE not available
+  ORA-27101: shared memory realm does not exist
+  Linux Error: 2: No such file or directory  or
+  ORA-01034: ORACLE not available
+
+First check if ORACLE_SID is set correctly. 
+If ORACLE_SID is set correctly, then you probably have a trailing slash "/" on the ORACLE_HOME environment variable. Remove it and try again to connect to sys (e.g from ORACLE_HOME=/u01/app/oracle/product/10.1.0/db_1/ to ORACLE_HOME=/u01/app/oracle/product/10.1.0/db_1). 
+
+ORA-01034: ORACLE not available
+  ORA-27121: unable to determine size of shared memory segment
+  Linux Error: 13: Permission denied
+
+Make sure the SUID/SGID bits are set for $ORACLE_HOME/bin/oracle: 
+ls -l $ORACLE_HOME/bin/oracle
+-rwsr-s--x  1 oracle oinstall 72524978 Dec 26 13:12 /u01/app/oracle/OraHome_1/bin/oracle
+
+
+ORA-00988 missing or invalid password(s).
+
+During the Oracle10g installation you probably provided a password for the Oracle database accounts that started with a digit number. Ignore this error message and change the password when you are done with the Oracle10g installation. 
+
+X11 connection rejected because of wrong authentication.
+  X connection to localhost:10.0 broken (explicit kill or server shutdown).
+
+To rectify this problem, try to login to the remote Oracle server again by using the "X11 forward" feature of ssh. Execute the following command from your local desktop: 
+$ ssh -X oracle@oracle_remote_server_name
+Now when you try to run any GUI tool on the remote server, it will automatically be relinked to your local desktop. If this is not working, verify that the ForwardX11 setting is not set to "no" in /etc/ssh/ssh_config on your remote server: 
+su - root
+grep ForwardX11 /etc/ssh/ssh_config
+#   ForwardX11 no
+ForwardX11Trusted yes
+
+If you are using telnet, however, you will have to set DISPLAY manually, see my other article Starting runInstaller for more information. 
+
+
+./runInstaller: line 67:  6275 Segmentation fault      $CMDDIR/install/runInstaller -formCluster $*
+
+This error can come up if your system does not have a swap space. 
+
+Preparing to launch Oracle Universal Installer from /tmp/OraInstall2005-03-13_03-53-51PM.
+  Please wait .../tmp/OraInstall2005-03-13_03-53-51PM/oui/lib/linux/libclntsh.so.9.0  bad CRC c0265abb  (should be f138c206)
+
+  Error in writing to directory /tmp/OraInstall2005-03-13_03-53-51PM. Please ensure that this directory is writable and
+  has atleast 60 MB of disk space. Installation cannot continue.
+
+
+Sometimes I'm getting this error message. Simply try again. 
+Recovery Manager rman hangs 
+You are probably running the wrong rman binary which belongs to the XFree86-devel RPM: 
+$ which rman
+/usr/X11R6/bin/rman
+
+
+References
+
+Oracle Database Quick Installation Guide 10g Release 1 (10.1.0.3) for Linux x86. 
+Oracle Database Installation Guide 10g Release 1 (10.1) for UNIX Systems 
+Oracle Database 10g Release 1 (10.1) Documentation 
+Werner's Oracle - Linux Page 
+

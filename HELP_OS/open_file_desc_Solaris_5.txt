@@ -1,0 +1,435 @@
+     Previous      Contents      Index      Next      
+   
+Sun Java System Application Server Enterprise Edition 8.1 2005Q1 Performance Tuning Guide   
+
+Chapter 5 
+Tuning the Operating System 
+This chapter discusses tuning the operating system (OS) for optimum performance. It discusses the following topics: 
+
+Server Scaling
+Tuning for Solaris 
+Tuning for Solaris on x86
+Tuning for Linux platforms
+
+--------------------------------------------------------------------------------
+Server Scaling 
+This section provides recommendations for optimal performance scaling server for the following server subsystems: 
+
+Processors 
+Memory 
+Disk Space 
+Networking 
+Processors 
+The Application Server automatically takes advantage of multiple CPUs. In general, the effectiveness of multiple CPUs varies with the operating system and the workload, but more processors will generally improve dynamic content performance. 
+
+Static content involves mostly input/output (I/O) rather than CPU activity. If the server is tuned properly, increasing primary memory will increase its content caching and thus increase the relative amount of time it spends in I/O versus CPU activity. Studies have shown that doubling the number of CPUs increases servlet performance by 50 to 80 percent. 
+
+Memory 
+See the Sun Java System Application Server Release Notes for specific memory recommendations for each supported operating system. 
+
+Disk Space 
+It is best to have enough disk space for the OS, document tree, and log files. In most cases 2GB total is sufficient. 
+
+Put the OS, swap/paging file, Application Server logs, and document tree each on separate hard drives. This way, if the log files fill up the log drive, the OS does not suffer. Also, its easy to tell if the OS paging file is causing drive activity, for example. 
+
+OS vendors generally provide specific recommendations for how much swap or paging space to allocate. Based on Sun testing, Application Server performs best with swap space equal to RAM, plus enough to map the document tree. 
+
+Networking 
+To determine the bandwidth the application needs, determine the following values: 
+
+The number of peak concurrent users (Npeak) the server needs to handle.
+The average request size on your site, r. The average request can include multiple documents. When in doubt, use the home page and all its associated files and graphics. 
+Decide how long the average user will be willing to wait for a document, t, at peak utilization. 
+Then, the bandwidth required is: 
+
+ 
+
+For example, to support a peak of 50 users with an average document size of 24 Kbytes, and transferring each document in an average of 5 seconds, requires 240 Kbytes (1920 Kbit/s). So the site needs two T1 lines (each 1544 Kbit/s). This bandwidth also allows some overhead for growth. 
+
+The server.s network interface card must support more than the WAN to which it is connected. For example, if you have up to three T1 lines, you can get by with a 10BaseT interface. Up to a T3 line (45 Mbit/s), you can use 100BaseT. But if you have more than 50 Mbit/s of WAN bandwidth, consider configuring multiple 100BaseT interfaces, or look at Gigabit Ethernet technology. 
+
+
+--------------------------------------------------------------------------------
+Tuning for Solaris 
+Tuning Parameters
+File Descriptor Setting
+Using Alternate Threads
+Tuning Parameters 
+Tuning Solaris TCP/IP settings benefits programs that open and close many sockets. Since the Application Server operates with a small fixed set of connections, the performance gain might not be significant. 
+
+The following table shows Solaris tuning parameters used for performance and scalability benchmarking. These values are examples of how to tune your system for best performance.
+
+Table 5-1  Tuning Parameters for Solaris 
+ Parameter 
+ Scope 
+ Default 
+ Tuned Value 
+ Comments 
+ 
+rlim_fd_max 
+ /etc/system 
+ 1024 
+ 8192 
+ Process open file descriptors limit; should account for the expected load (for the associated sockets, files, pipes if any). 
+ 
+rlim_fd_cur 
+ /etc/system 
+ 1024 
+ 8192 
+   
+ 
+sq_max_size 
+ /etc/system 
+ 2 
+ 0 
+ Controls streams driver queue size; setting to 0 makes it infinity so the performance runs won.t be affected by lack of buffer space. Set on clients too. 
+ 
+tcp_close_wait_interval 
+ ndd /dev/tcp 
+ 240000 
+ 60000 
+ Set on clients too. 
+ 
+tcp_time_wait_interval 
+ ndd /dev/tcp 
+ 240000 
+ 60000 
+   
+ 
+tcp_conn_req_max_q 
+ ndd /dev/tcp 
+ 128 
+ 1024 
+   
+ 
+tcp_conn_req_max_q0 
+ ndd /dev/tcp 
+ 1024 
+ 4096 
+   
+ 
+tcp_ip_abort_interval 
+ ndd /dev/tcp 
+ 480000 
+ 60000 
+   
+ 
+tcp_keepalive_interval 
+ ndd /dev/tcp 
+ 7200000 
+ 900000 
+ For high traffic web sites, lower this value. 
+ 
+tcp_rexmit_interval_initial 
+ ndd /dev/tcp 
+ 3000 
+ 3000 
+ If retransmission is greater than 30-40%, increase this value. 
+ 
+tcp_rexmit_interval_max 
+ ndd /dev/tcp 
+ 240000 
+ 10000 
+   
+ 
+tcp_rexmit_interval_min 
+ ndd /dev/tcp 
+ 200 
+ 3000 
+   
+ 
+tcp_smallest_anon_port 
+ ndd /dev/tcp 
+ 32768 
+ 1024 
+ Set on clients, too. 
+ 
+tcp_slow_start_initial 
+ ndd /dev/tcp 
+ 1 
+ 2 
+ Slightly faster transmission of small amounts of data. 
+ 
+tcp_xmit_hiwat 
+ ndd /dev/tcp 
+ 8129 
+ 32768 
+ Size of transmit buffer. 
+ 
+tcp_recv_hiwat 
+ ndd /dev/tcp 
+ 8129 
+ 32768 
+ Size of transmit buffer. 
+ 
+tcp_recv_hiwat 
+ ndd /dev/tcp 
+ 8129 
+ 32768 
+ Size of receive buffer. 
+ 
+tcp_conn_hash_size 
+ ndd /dev/tcp 
+ 512 
+ 8192 
+ Size of connection hash table. See Sizing the Connection Hash Table 
+ 
+
+
+Sizing the Connection Hash Table 
+The connection hash table keeps all the information for active TCP connections. Use the following command to get the size of the connection hash table: 
+
+ndd -get /dev/tcp tcp_conn_hash 
+
+This value does not limit the number of connections, but it can cause connection hashing to take longer. The default size is 512. 
+
+To make lookups more efficient, set the value to half of the number of concurrent TCP connections that are expected on the server. You can set this value only in /etc/system, and it becomes effective at boot time. 
+
+Use the following command to get the current number of TCP connections. 
+
+netstat -nP tcp|wc -l 
+
+File Descriptor Setting 
+On Solaris, setting the maximum number of open files property using ulimit has the biggest impact on efforts to support the maximum number of RMI/IIOP clients. 
+
+To increase the hard limit, add the following command to /etc/system and reboot it once: 
+
+set rlim_fd_max = 8192 
+
+Verify this hard limit by using the following command: 
+
+ulimit -a -H 
+
+Once the above hard limit is set, increase the value of this property explicitly (up to this limit) using the following command: 
+
+ulimit -n 8192 
+
+Verify this limit by using the following command: 
+
+ulimit -a 
+
+For example, with the default ulimit of 64, a simple test driver can support only 25 concurrent clients, but with ulimit set to 8192, the same test driver can support 120 concurrent clients. The test driver spawned multiple threads, each of which performed a JNDI lookup and repeatedly called the same business method with a think (delay) time of 500ms between business method calls, exchanging data of about 100KB. 
+
+These settings apply to RMI/IIOP clients (on Solaris). For more information on setting the file descriptor limits, see the online Solaris documentation at http://docs.sun.com/db/prod/solaris. 
+
+Using Alternate Threads 
+The Solaris operating environment by default supports a two-level thread model (up to Solaris 8). Application-level Java threads are mapped to user-level Solaris threads, which are multiplexed on a limited pool of light weight processes (LWPs). To conserve kernel resources and maximize system efficiency, you need only as many LWPs as there are processors on the system. This helps when there are hundreds of user-level threads. You can choose from multiple threading models and different methods of synchronization within the model, depending on the JVM. 
+
+Try to load the alternate libthread.so in /usr/lib/lwp/ on Solaris 8 by changing the LD_LIBRARY_PATH to include /usr/lib/lwp before /usr/lib. Both give better throughput and system utilization for certain applications; especially those using fewer threads. 
+
+By default, the Application Server uses /usr/lib/lwp. Change the default settings to not use the LWP by removing /usr/lib/lwp from the LD_LIBRARY_PATH in the startserv script, but avoid doing this unless it is absolutely required. 
+
+For applications using many threads, /usr/lib/libthread.so is the best library to use. Of course, see using -Xconcurrentio for applications with many threads as this will not only turn on LWP based sync, the default in 1.4, but also turn off TLABS, or thread local allocation buffers, which can chew up the heap and cause premature garbage collection. 
+
+Further Information 
+For more information on Solaris threading issues with Java, see http://java.sun.com/docs/hotspot/threads/threads.html 
+
+For additional information on tuning the HotSpot JVM, see Further Information. 
+
+For further information on tuning Solaris system see the Solaris Tunable Parameters reference manual located at http://docs.sun.com/db/doc/806-7009. 
+
+
+--------------------------------------------------------------------------------
+Tuning for Solaris on x86 
+The following are some options to consider when tuning Solaris on x86 for Application Server and HADB: 
+
+IP Stack Settings
+File Descriptors
+Virtual Memory
+Some of the values depend on the system resources available. After making any changes to /etc/system, reboot the machines. 
+
+Semaphores and Shared Memory 
+Add (or edit) the following lines in the /etc/system file: 
+
+set shmsys:shminfo_shmmax=0xffffffff
+set shmsys:shminfo_shmseg=128
+set semsys:seminfo_semmnu=1024
+set semsys:seminfo_semmap=128
+set semsys:seminfo_semmni=400
+set semsys:seminfo_semmns=1024 
+
+These settings affect the number of semaphores and the shared memory. These are more relevant for the machine on which HADB server is running than for Application Server. 
+
+File Descriptors 
+Add (or edit) the following lines in the /etc/system file: 
+
+set rlim_fd_max=65536
+set rlim_fd_cur=65536
+set sq_max_size=0
+set tcp:tcp_conn_hash_size=8192
+set autoup=60
+set pcisch:pci_stream_buf_enable=0 
+
+These settings affect the file descriptors. 
+
+IP Stack Settings 
+Add (or edit) the following lines in the /etc/system file: 
+
+set ip:tcp_squeue_wput=1
+set ip:tcp_squeue_close=1
+set ip:ip_squeue_bind=1
+set ip:ip_squeue_worker_wait=10
+set ip:ip_squeue_profile=0 
+
+These settings tune the IP stack. 
+
+To preserve the changes to the file between system reboots, place the following changes to the default TCP variables in a startup script that gets executed when the system reboots: 
+
+ndd -set /dev/tcp tcp_time_wait_interval 60000
+ndd -set /dev/tcp tcp_conn_req_max_q 16384
+ndd -set /dev/tcp tcp_conn_req_max_q0 16384
+ndd -set /dev/tcp tcp_ip_abort_interval 60000
+ndd -set /dev/tcp tcp_keepalive_interval 7200000
+ndd -set /dev/tcp tcp_rexmit_interval_initial 4000
+ndd -set /dev/tcp tcp_rexmit_interval_min 3000
+ndd -set /dev/tcp tcp_rexmit_interval_max 10000
+ndd -set /dev/tcp tcp_smallest_anon_port 32768
+ndd -set /dev/tcp tcp_slow_start_initial 2
+ndd -set /dev/tcp tcp_xmit_hiwat 32768
+ndd -set /dev/tcp tcp_recv_hiwat 32768 
+
+
+--------------------------------------------------------------------------------
+Tuning for Linux platforms 
+To tune for maximum performance on Linux, you need to make adjustments to the following: 
+
+File Descriptors
+Virtual Memory
+Network Interface
+Disk I/O Settings
+TCP/IP Settings
+File Descriptors 
+You may need to increase the number of file descriptors from the default. Having a higher number of file descriptors ensures that the server can open sockets under high load and not abort requests coming in from clients. 
+
+Start by checking system limits for file descriptors with this command: 
+
+% cat /proc/sys/fs/file-max
+8192 
+
+The current limit shown is 8192. To increase it to 65535 (as root): 
+
+# echo "65535" > /proc/sys/fs/file-max 
+
+To make this value to survive a system reboot, add it to /etc/sysctl.conf and specify the maximum number of open files permitted: 
+
+fs.file-max = 65535 
+
+Note: The parameter is not proc.sys.fs.file-max, as one might expect. 
+
+To list the available parameters that can be modified using sysctl: 
+
+% sysctl -a 
+
+To load new values from the sysctl.conf file: 
+
+% sysctl -p /etc/sysctl.conf 
+
+To check and modify limits per shell: 
+
+% limit
+cputime unlimited
+filesize unlimited
+datasize unlimited
+stacksize 8192 kbytes
+coredumpsize 0 kbytes
+memoryuse unlimited
+descriptors 1024
+memorylocked unlimited
+maxproc 8146
+openfiles 1024 
+
+The openfiles and descriptors show a limit of 1024. To increase the limit to 65535 for all users, edit /etc/security/limits.conf as root, and modify or add the "nofile" (number of file) entries: 
+
+*     soft nofile           65535
+*     hard nofile           65535 
+
+The character .*. is a wildcard that identifies all users. You could also specify a user ID instead. 
+
+Then edit /etc/pam.d/login and add the line: 
+
+session required /lib/security/pam_limits.so 
+
+On Red Hat, you also need to edit /etc/pam.d/sshd and add the following line: 
+
+session required /lib/security/pam_limits.so 
+
+On many systems, this procedure will be sufficient. Log in as a regular user and try it before doing the remaining steps. The remaining steps might not be required, depending on how pluggable authentication modules (PAM) and secure shell (SSH) are configured. 
+
+Virtual Memory 
+To change virtual memory settings, add the following to /etc/rc.local: 
+
+echo 100 1200 128 512 15 5000 500 1884 2 > /proc/sys/vm/bdflush 
+
+For more information, view the man pages for bdflush. 
+
+For HADB settings, refer to Chapter 6, "Tuning for High-Availability". 
+
+Network Interface 
+To ensure that the network interface is operating in full duplex mode, add the following entry into /etc/rc.local: 
+
+mii-tool -F 100baseTx-FD eth0 
+
+where eth0 is the name of the network interface card (NIC). 
+
+Disk I/O Settings 
+To tune disk I/O performance for non SCSI disks, do the following: 
+
+Test the speed using:
+/sbin/hdparm -t /dev/hdX 
+
+Enable DMA, using the following:
+/sbin/hdparm -d1 /dev/hdX 
+
+Check the speed again using the hdparm command.
+Given that DMA is not enabled by default, the transfer rate might have improved considerably. In order to do this at every reboot, add the /sbin/hdparm -d1 /dev/hdX line to /etc/conf.d/local.start, /etc/init.d/rc.local, or whatever the startup script is called. 
+
+For information on SCSI disks, see: http://people.redhat.com/alikins/system_tuning.html#scsi 
+
+TCP/IP Settings 
+To tune the TCP/IP settings, follow this procedure: 
+
+Add the following entry to /etc/rc.local
+echo 30 > /proc/sys/net/ipv4/tcp_fin_timeout
+echo 60000 > /proc/sys/net/ipv4/tcp_keepalive_time
+echo 15000 > /proc/sys/net/ipv4/tcp_keepalive_intvl
+echo 0 > /proc/sys/net/ipv4/tcp_window_scaling 
+
+Add the following to /etc/sysctl.conf
+# Disables packet forwarding
+net.ipv4.ip_forward = 0 
+
+# Enables source route verification
+net.ipv4.conf.default.rp_filter = 1 
+
+# Disables the magic-sysrq key
+kernel.sysrq = 0 
+
+net.ipv4.ip_local_port_range = 1204 65000
+net.core.rmem_max = 262140
+net.core.rmem_default = 262140
+net.ipv4.tcp_rmem = 4096 131072 262140
+net.ipv4.tcp_wmem = 4096 131072 262140
+net.ipv4.tcp_sack = 0
+net.ipv4.tcp_timestamps = 0
+net.ipv4.tcp_window_scaling = 0
+net.ipv4.tcp_keepalive_time = 60000
+net.ipv4.tcp_keepalive_intvl = 15000
+net.ipv4.tcp_fin_timeout = 30 
+
+Add the following as the last entry in /etc/rc.local
+sysctl -p /etc/sysctl.conf 
+
+Reboot the system.
+Finally, use this command to increase the size of the transmit buffer:
+tcp_recv_hiwat ndd /dev/tcp 8129 32768 
+
+
+
+
+Previous      Contents      Index      Next      
+ 
+
+--------------------------------------------------------------------------------
+
+Part No: 819-0084.   Copyright 2004 - 2005 Sun Microsystems, Inc. All rights reserved. 
+

@@ -1,0 +1,32 @@
+File descriptors
+A file descriptor is a handle created by a process when a file is opened. There is a limit to the amount of file descriptors per process. The default Solaris file descriptor limit is 64.
+
+If the file descriptor limit is exceeded for a process, you may see the following errors:
+
+"Too Many Open Files"
+"Err#24 EMFILE" (in truss output)
+
+To display a process' current file descriptor limit, run /usr/proc/bin/pfiles pid | grep rlimit on Solaris systems.
+
+Display system file descriptor settings:
+ulimit -Hn (hard limit, cannot be exceeded)
+ulimit -Sn / ulimit -n (soft limit may be increased to hard limit value)
+
+Increasing file descriptor settings for child processes (example):
+$ ulimit -Hn
+1024
+$ ulimit -Sn
+64
+$ ulimit -Sn 1024
+$ ulimit -Sn
+1024
+
+Solaris kernel parameters:
+rlim_fd_cur: soft limit
+
+It may be dangerous to set this value higher than 256 due to limitations with the stdio library. If programs require more file descriptors, they should use setrlimit directly.
+
+rlim_fd_max: hard limit
+
+It may be dangerous to set this value higher than 1024 due to limitations with select. If programs require more file descriptors, they should use setrlimit directly.
+

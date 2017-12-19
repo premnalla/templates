@@ -1,0 +1,19 @@
+Increase file descriptor limit under Linux to prevent java.net.SocketException: Too many open files David Hausheer  
+    
+--------------------------------------------------------------------------------
+Get current limit:
+ulimit -n
+
+cat /proc/sys/fs/file-nr
+
+The default limit is 1024.
+
+Get current number of open file descriptors:
+lsof [-p pid] | wc -l
+
+Increase the limit:
+Edit /etc/security/limits.conf:
+
+username hard nofile 32768
+
+

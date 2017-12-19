@@ -1,0 +1,76 @@
+
+Parsing args
+--------------
+netsnmp_session sess;
+snmp_parse_args(argc, argv, &sess, ...)
+- This will return with the sess variable set with the appropriate values 
+(version, community, host, etc)
+
+
+Opening Session
+----------------
+NOTE: we can set a callback in the original session
+sess.peername = host->name;
+sess.callback = asynch_response;    /* default callback */
+sess.callback_magic = <our_arg>;  /* this is is what we want passed in to the callback function */
+
+- callback signature
+int asynch_response(int operation, struct snmp_session *sp, int reqid,
+        struct snmp_pdu *pdu, void *magic);
+
+
+netsnmp_session * actual_sess = snmp_open(&sess);
+- this will return an actual session with the peer(host), or null otherwise.
+
+
+Parsing and Creating PDU
+--------------------------
+pdu = snmp_pdu_create(SNMP_MSG_GET);
+- create a pdu
+
+snmp_parse_oid(oids[count], name, &name_length);
+- parse oid
+
+snmp_add_null_var(pdu, name, name_length);
+- add oid to pdu
+
+
+Sending Request PDU
+--------------------
+snmp_send(host->sess, pdu)
+- send pdu (i.e., request)
+
+
+Receiving and Processing Reply
+-------------------------------
+while (!done) {
+    int fds = 0, block = 1;
+    fd_set fdset;
+    struct timeval timeout;
+
+    FD_ZERO(&fdset);
+
+    NOTE: snmp_select_info(&fds, &fdset, &timeout, &block);
+
+    fds = select(fds, &fdset, NULL, NULL, block ? NULL : &timeout);
+    if (fds < 0) {
+        perror("select failed");
+        exit(1);
+    }
+    if (fds)
+        snmp_read(&fdset);
+    else
+        snmp_timeout();
+}
+
+- above instead of calling snmp_select_info() we can instead call 
+  snmp_sess_select_info(allocated_sess, ...). This will set the FD for the session
+  we opened in the current worker. This will enable (I hope) for multiple threads
+  to do their own polling (snmp getting). We will have to loop through all the sessions
+  in the current worker and call snmp_sess_select_info(), and also in the meantime
+  figure out the highest 'fds' variable to finally pass into select() sys call.
+NOTE: note after the while(!dnoe){} loop we need to free the allocated/open actual_sessions
+  by calling snmp_close(actual_session);
+
+
+

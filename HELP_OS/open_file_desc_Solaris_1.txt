@@ -1,0 +1,239 @@
+  
+sun.com  |  1-800-123-4000  How To Buy  |  My Sun  |  Worldwide Sites                
+  
+ 
+  
+   
+   
+ 
+
+Home > Access1.sun.com > TechNotes
+
+
+ACCESS1.SUN.COM
+TechNotes
+Access1.sun.com 
+»   SEARCH Access1 
+»   Contact Us 
+»   Code Samples 
+»   Technical Articles 
+ TechNotes 
+»   Tools 
+»   Tutorials 
+»   Sun Forum FAQ Sets 
+»   Support Readiness Documents 
+ 
+ 
+See Also: 
+»   Developer Support Services 
+»   Forte for Java 
+»   Forte Tools 
+»   iPlanet 
+»   Java Developer Connection 
+»   Solaris Developer Connection 
+»   SunSolve Online 
+»   Training 
+  
+ 
+ 
+ DATE APPROVED: 6/24/02 
+DOCUMENT ID: 01406 
+
+SYNOPSIS: Maximum number of open files 
+
+OS: Solaris[tm] Operating Environment (OE) 
+
+PLATFORM: All 
+
+OS VERSION: Solaris 5.x OE 
+
+TECH AREA: OS 
+
+PRODUCT: Kernel 
+
+KEYWORDS:  open(2), fopen(3C), cc, rlim_fd_cur, rlim_fd_max, Sys calls 
+  
+
+The following TechNotes may contain actual software programs in source code form. This source code is made available for developers to use as needed, pursuant to the terms and conditions of this license. 
+  
+
+DESCRIPTION: 
+
+The maximum number of open files a process can have is limited by various factors. Many parameters can be adjusted. Also, the Solaris 9 OE greatly increases the absolute maximum number of files. 
+
+SOLUTION: 
+
+Most programs do not work near the limits of open files but when a limit is reached, it can be a confusing situation. The most common applications with large numbers of open files are network servers which are connected to large numbers of clients at the same time. This TechNote should help developers understand file limits and how to adjust them properly. 
+
+There are system limits on the number of files a process can keep open at any given time. The limit varies by user environment settings, the release of the Solaris OE in use, and the current kernel configuration. The kernel variable rlim_fd_max is an absolute limit which is set in the kernel. The kernel variable rlim_fd_cur sets the default process soft limit. The shell inherits the default limits which can be retrieved and modified by the ulimit command. The remainder of this TechNote examines the different limitations and how to adjust them. 
+
+open() and fopen() limitations 
+
+There are a number of ways for a programmer to open files from C code. Two of the common methods are the system call open(2) and the stdio library call fopen(3C). Each of these calls is limited to the number of opens they can perform, but fopen(3C) has a harsh stdio library limit. 
+
+Both open(2) and fopen(3C) use file descriptors which are taken from the total number of file descriptors allowed by the environment. If a program uses open(2) exclusively, then the program will be able to open as many files as the current soft limit allows. The soft limit defines how many files a process can open. There are actually two environmental limits. The soft limit and the hard limit. The soft limit is the number of files a process can open by default. The hard limit is the maximum number of files a process can open if it increases the soft limit (example following). 
+
+fopen(3C) has another type of limitation. The file descriptor number used by the stream is limited. File descriptors are allocated by the system starting at 0, and are then allocated in numerical order. Descriptors 0, 1, and 2 are opened for every process as stdin, stdout and stderr at startup. One file descriptor is allocated per open(2) or fopen(3C). However, fopen(3C) actually returns a file stream pointer which is used with fread(3C), fwrite(3C), fputs(3C), etc. The number of file streams returned by fopen(3C) is subject to a limit. The number of the file descriptor used by the fopen(3C) must be less than 256. That limit creates a couple issues. After the first 256 file descriptors are used, open(2) will continue to succeed up to the soft file open limit, but fopen(3C) will fail. In addition, if any of the file descriptors under 256 have been allocated by open(2), those file descriptors cannot be used by fopen(3C). So, if a program is going to use a large number of file streams, the fopen(3C) descriptors should be opened first. Basically, open(2) will work with any file descriptor up to the soft limit while fopen(3C) will only work with file descriptors under 256. 
+
+Following is a small program which tests the limits on a user. 
+
+
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <errno.h>
+
+#define MAXOPEN 100000
+#define MAXFOPEN 100000
+
+main()
+{
+
+
+FILE *fps[MAXFOPEN];
+int fds[MAXOPEN];
+
+char fname[256];
+int i, j;
+
+/*
+ *  Test total number of fopen()'s which can be completed
+ */
+
+for (i = 0; i < MAXFOPEN; i++)  {
+        sprintf(fname, "fopen_%05d", i);
+        if ((fps[i] = fopen(fname, "w+")) == NULL)  {
+                perror("fopen fails");
+                break;
+                }
+        }
+
+printf("fopen() completes:  %d\n", i);
+/*
+ *  Close the file descriptors
+ */
+
+for (j =0; j < i; j++)  {
+if (fclose(fps[j]) == EOF)  {
+        perror("fclose fails");
+        exit(1);
+        }
+}
+
+
+for (i = 0; i < MAXOPEN; i++)  {
+        sprintf(fname, "open_%05d", i);
+        if ((fds[i] = open(fname, O_CREAT | O_RDWR, 0644)) == -1)  {
+                perror("open fails");
+                break;
+                }
+        }
+printf("open() completes:  %d\n", i);
+}
+
+
+A sample compilation and run will be shown in the Process Environment Limitations section. 
+
+Note that 64-bit binaries are not subject to the fopen(3C) limitation. However, 64-bit binaries are subject to the file open hard limit. 
+
+Process Environment Limitations 
+
+The process environment limit is one which can be easily adjusted by the user with the ulimit command. Following is sample output of the ulimit command, along with the test program which uses the open() and fopen() calls. This example is run under the Korn shell (/bin/ksh). Other shells may use different ulimit syntax. 
+
+$ cc filetest.c -o filetest
+$ ulimit -a
+time(seconds) unlimited
+file(blocks) unlimited
+data(kbytes) unlimited
+stack(kbytes) 8192
+coredump(blocks) unlimited
+nofiles(descriptors) 256
+memory(kbytes) unlimited
+$ filetest
+fopen fails: Too many open files
+fopen() completes:  253
+open fails: Too many open files
+open() completes:  253
+$ ulimit -n 512
+$ ulimit -a
+time(seconds) unlimited
+file(blocks) unlimited
+data(kbytes) unlimited
+stack(kbytes) 8192
+coredump(blocks) unlimited
+nofiles(descriptors) 512
+memory(kbytes) unlimited
+$ filetest
+fopen fails: Too many open files
+fopen() completes:  253
+open fails: Too many open files
+open() completes:  509
+
+This is an example of raising the file limit from the process maximum of 256 up to 512 by using the ulimit -n command. The "filetest" program attempts to open(2) and fopen(3C) as many files as possible, and to print results on failure. Note that the program fails at the limit minus three. As mentioned earlier, the three other descriptors are the standard stdin, stdout and sdterr. Those descriptors are open for every process; they can be closed if the program does not need their functionality. 
+
+This example shows the soft limit being decreased from 512 to 256. The default soft and hard limits can be found by using the sysdef command and looking at the "Process Resource Limit Tunables" section of the output. 
+
+Kernel Limitations 
+
+The ulimit maximum (hard limit) is based on a kernel parameter. The kernel variable which controls the limit can be set in /etc/system. The variable name is rlim_fd_max. The value can be changed by adding the following line to /etc/system. 
+
+set rlim_fd_max=2048
+
+This will set the maximum number of file descriptors (hard limit) per process up to 2048. Different versions of the Solaris OE have different limits. The following table summarizes the changes. 
+
+Default Solaris file limitations  Solaris Release Default soft file limit Default hard file limit  
+Solaris 7 64 1024  
+Solaris 8 256 1024  
+Solaris 9 256 65536  
+
+The default settings listed above mean that the ulimit command will not be able to go above that level in a newly-installed system. When the rlim_fd_max variable is set, users will be able to go up to the maximum specified value. 
+
+If a program cannot rely on the ulimit value being set properly, code can be written which will check the hard and soft limits currently set on file descriptors. The program can then ask the user to take proper actions. Following is an example program which uses getrlimit(2) to request the current values. 
+
+
+#include <stdio.h>
+#include <sys/resource.h>
+
+main()
+{
+
+struct rlimit rlimit;
+
+if (getrlimit(RLIMIT_NOFILE, &rlimit) == -1)  {
+        perror("getrlimit fails");
+        exit(1);
+        }
+
+printf("File soft limit:  %d\n", rlimit.rlim_cur);
+printf("File hard limit:  %d\n", rlimit.rlim_max);
+
+}
+
+
+Here is a sample run of this program: 
+
+$ cc getlimit.c -o getlimit
+$ ulimit -n
+512
+$ getlimit
+File soft limit:  512
+File hard limit:  512
+$ ulimit -n 256 
+$ getlimit
+File soft limit:  256
+File hard limit:  256
+$ 
+
+The number we are most interested in is the hard limit. This is the limit placed on the process by the environment. The soft limit can be raised or lowered by the process by using setrlimit(2), but the hard limits cannot be exceeded without root permissions. One point to notice in the preceding output is that the shell used for the example (ksh) adjusts both the hard and soft limits; this is the reason for the change of both values. That behavior can be modified with flags. 
+
+To summarize, the number of files a user process can open is limited in three ways. The ultimate limit is set by the kernel variable fd_rlim_max. That value is inherited by every user process and cannot be exceeded. The second limit is placed by the shell. The shell will inherit the kernel settings and can adjust the hard and soft values using the ulimit command. As noted earlier, the shell cannot adjust to values above the hard limit. The final limit is placed by the executable itself. The executable can adjust the limits using rlimit() to raise or lower the soft limit, but it cannot exceed the hard limit in the environment. 
+
+REFERENCES: 
+Solaris manpages: open(2), fopen(3C), setrlimit(2), getrlimit(2), Solaris Tunable Parameters Reference Manual 
+ 
+  
+  
+
+Company Info   |   Contact   |   Terms of Use   |   Privacy   |   Copyright 1994-2002 Sun Microsystems 
+  

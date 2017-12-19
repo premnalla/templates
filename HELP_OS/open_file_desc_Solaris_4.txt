@@ -1,0 +1,57 @@
+All releases allow for much more than 1024; it's not tested to a great 
+extend nor is it efficient in older releases.  Solaris 8 is the first 
+release to efficiently deal with large numbers of fds.  Solaris 7 is 
+the first release to allow more than 1024 fds for select. 
+(Opening a million fds with proper limits set is certainly possible) 
+
+Solaris 7 is also the first release containing the "plimit" program 
+which allows you to query and set the per-process limits for any process. 
+
+
+Solaris 2.3 and before are extremely inefficient in handling large 
+numbers of fds. 
+
+
+The solaris FAQ says: 
+
+
+3.45) How can I increase the number of file descriptors per process? 
+
+
+    In 2.3 in earlier this requires poking the kernel. 
+    In Solaris 2.4+, this can be accomplished by adding the 
+    following lines to /etc/system: 
+
+
+        * set hard limit on file descriptors 
+        set rlim_fd_max = 4096 
+        * set soft limit on file descriptors 
+        set rlim_fd_cur = 1024 
+
+
+    Raising the soft limit past 256 may confuse certain applications, 
+    especially BCP applications.  Raising the limit past 1024 may 
+    confuse applications that use select().  Select() cannot use more 
+    than 1024 file descriptors at this time prior to Solaris 7.  In 
+    Solaris 2.6, the RPC code was rewritten to use poll(), which does 
+    work with many more fds than select().  Prior to 2.6, all RPC 
+    servers will likely crash and burn if you increase the fd soft 
+    limit past 1024. 
+
+
+    Solaris 7 allows upto 65536 fds passed to select; this is the 
+    default for 64 bit applications but it requires recompiling with a 
+    larger value for FD_SETSIZE for 32 bit apps. 
+
+
+    Programs using stdio or even library calls that use stdio may break 
+    when they have more than 256 files open as that is the stdio limit. 
+    Programs using many filedescriptors should try and reserve a number 
+    of low numbered file descriptors for use by stdio. 
+
+
+    The stdio limit is removed for 64 bit applications in Solaris 7; 
+    if you really need more than 256 FILE * in and you can't use Solaris 7+ 
+    or need to run in 32 bits, you can use SFIO from AT&T. 
+
+

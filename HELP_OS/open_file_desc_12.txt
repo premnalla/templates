@@ -1,0 +1,11 @@
+If you want to increase the maximum files to open:
+
+edit
+/etc/security/limits.conf:
+
+* soft nofile 2048
+* hard nofile 2048
+
+Make sure you have this line in /etc/pam.d/login and /etc/pam.d/su
+session required pam_limits.so 
+

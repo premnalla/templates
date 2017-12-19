@@ -1,0 +1,45 @@
+Added by Ivan Benko, last edited by David Soul on Oct 18, 2006  (view change) 
+Labels: troubleshooting-faq, ulimit, handlers, handles, file, faq_conf_dev 
+
+
+
+Add Labels   
+Enter labels to add to this page:
+  
+Tip: Looking for a label? Just start typing.   
+  
+
+When system performance on Linux is affected by using too many file descriptors, usually an error can be seen in the log file '(Too many open files)'. Although this affects the entire system, it is a fairly common problem. There is an improvement request to reduce open file descriptors scheduled for an upcoming Confluence 2.3.x release.
+
+To obtain the current maximum number of file descriptors, use 'cat /proc/sys/fs/file-max'. For comparison, an out-the-box ubuntu system has file-max set to 205290.
+
+Increase Total File Descriptors For System
+To prevent Confluence from running out of filehandles you need to make sure that there are enough file handles available at the system level, and that the user you are running Confluence as is allowed to use enough file handles:
+
+Run the command sysctl -a. If this is less than 200000, increase the number of file handles by editing /etc/sysctl.conf and changing the property fs.file-max to 200000. If there isn't a value set already for this property, you need to add the line fs.file-max=200000.
+
+Then run sysctl -p to apply your changes to your system.
+
+Increase Total File Descriptors For User
+Linux also limits the number of files that can be open per login shell. To change this limit for the user that runs the Confluence service you will need to adjust the user limit configuration.
+
+For PAM enabled systems
+For Linux systems running PAM you will need to adjust /etc/security/limits.conf
+
+The format of this file is <username> <limit type> <item> <value>.
+
+For example to set the limit for the user confservice the following line would be used:
+
+confservice hard nofile 5000Other systems
+For other Linux systems the file responsible for setting limits is /etc/limits
+
+To replicate the setting given in the previous example the line would be:
+
+confservice N 5000To Count Total File Descriptors Used By Confluence
+To get the total number of handles that are used by Confluence:
+
+Locate the Confluence ProcId by identifying the Java process with{{'ps axwwwu | grep java'}} 
+Either run ls -la /proc/<pid>/fd, or use the lsof (LiSt Open Files) command lsof -p <pid of Confluence process>. For a Confluence ProcID of 460, use: 
+$ lsof -p 460 | wc -lWhen getting support for this error
+If you are encountering the Too many open files error within Confluence and this advice does not help, please accompany any support request with the output of lsof -p <PID of Confluence process>, taken at the time of the error, so that the support engineer can determine precisely which file descriptors are being held open.
+

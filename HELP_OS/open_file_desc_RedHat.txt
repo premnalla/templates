@@ -1,0 +1,1723 @@
+
+
+Tuning and Optimizing Red Hat Enterprise Linux for Oracle 9i and 10g Databases 
+Written by Werner Puschitz
+
+
+www.puschitz.com
+
+New Release!  Oracle 10g New Features by Example  New Release! 
+
+
+
+
+
+
+
+
+
+
+This article is a step by step guide for tuning and optimizing Red Hat Enterprise Linux on x86 and x86-64 platforms running Oracle 9i (32bit/64bit) and Oracle 10g (32bit/64bit) standalone and RAC databases. This guide covers Red Hat Enterprise Linux Advanced Server 3 and 4 and the older version 2.1. For instructions on installing Oracle 9i and 10g databases, see Oracle on Linux. Other Linux articles can be found at www.puschitz.com. 
+
+Last update: July 11, 2006 
+
+
+
+This article covers the following topics: 
+
+* Introduction
+* Hardware Architectures and Linux Kernels
+    General
+    32-bit Architecture
+    64-bit Architecture
+* Kernel Upgrades
+* Kernel Boot Parameters
+    General
+    I/O Scheduler
+* Memory Usage and Page Cache
+    Checking Memory Usage
+    Tuning Page Cache
+* Swap Space
+    General
+    Swap Size Recommendations
+    Checking Swap Space Size and Usage
+* Setting Shared Memory
+     Setting SHMMAX Parameter
+     Setting SHMMNI Parameter
+     Setting SHMALL Parameter
+     Removing Shared Memory
+* Setting Semaphores
+     The SEMMSL Parameter
+     The SEMMNI Parameter
+     The SEMMNS Parameter
+     The SEMOPM Parameter
+     Setting Semaphore Parameters
+     Example for Semaphore Settings
+* Setting File Handles
+* Adjusting Network Settings
+     Changing Network Adapter Settings
+     Changing Network Kernel Settings
+     Flow Control for e1000 NICs
+* Setting Shell Limits for the Oracle User
+     Limiting Maximum Number of Open File Descriptors for the Oracle User
+     Limiting Maximum Number of Processes for the Oracle User
+* Enabling Asynchronous I/O Support
+     Relinking Oracle9i R2 to Enable Asynchronous I/O Support
+     Relinking Oracle 10g to Enable Asynchronous I/O Support
+     Enabling Asynchronous I/O in Oracle 9i and 10g
+     Tuning Asynchronous I/O for Oracle 9i and 10g
+     Checking Asynchronous I/O Usage
+* Configuring I/O for Raw Partitions
+     General
+     Basics of Raw Devices
+     Using Raw Devices for Oracle Databases
+     Using Block Devices for Oracle 10g Release 2 in RHEL 4
+* Large Memory Optimization (Big Pages, Huge Pages)
+     Big Pages in RHEL 2.1 and Huge Pages in RHEL 3/4
+     Usage of Big Pages and Huge Pages in Oracle 9i and 10g
+     Sizing Big Pages and Huge Pages
+     Checking Shared Memory Before Starting Oracle Databases
+     Configuring Big Pages in RHEL 2.1
+     Configuring Huge Pages in RHEL 3
+     Configuring Huge Pages in RHEL 4
+     Huge Pages and Shared Memory Filesystem in RHEL 3/4
+* Growing the Oracle SGA to 2.7 GB in x86 RHEL 2.1 Without VLM
+     General
+     Linux Memory Layout
+     Increasing Space for the SGA in RHEL 2.1
+     Lowering the Mapped Base Address for Shared Libraries in RHEL 2.1
+     Lowering the SGA Attach Address for Shared Memory Segments in Oracle 9i
+     Allowing the Oracle User to Change the Mapped Base Address for Shared Libraries
+* Growing the Oracle SGA to 2.7/3.42 GB in x86 RHEL 3/4 Without VLM
+     General
+     Mapped Base Address for Shared Libraries in RHEL 3 and RHEL 4
+     Oracle 10g SGA Sizes in RHEL 3 and RHEL 4
+     Lowering the SGA Attach Address in Oracle 10g
+* Using Very Large Memory (VLM)
+     General
+     Configuring Very Large Memory (VLM)
+* Measuring I/O Performance on Linux for Oracle Databases
+     General
+     Using Orion
+* Appendix
+* References
+
+
+
+
+Introduction
+This article discusses Red Hat Enterprise Linux optimizations for x86 (32 bit) and x86-64 (64 bit) platforms running Oracle 9i R2 (32bit/64bit) and Oracle 10g R1/R2 (32bit/64bit) standalone and RAC databases. This guide covers Red Hat Enterprise Linux Advanced Server 2.1, 3, and 4. Various workarounds covered in this article are due to the 32-bit address limitations of the x86 platform. However, many steps described in this document also apply to x86-64 platforms. Sections that do not specifically say that its only applicable to 32-bit or 64-bit apply to both platforms. If you think that a section is not very clear on that, let me know. For supported system configurations and limits for Red Hat Enterprise Linux releases, see http://www.redhat.com/rhel/details/limits/. 
+
+Note this document comes without warranty of any kind. But every effort has been made to provide the information as accurate as possible. I welcome emails from any readers with comments, suggestions, and corrections at webmaster_at_puschitz.com. 
+
+
+
+Hardware Architectures and Linux Kernels
+General
+
+When it comes to large databases the hybrid x86-64 architecture platform is strongly recommended over the 32-bit x86 platform. 64-bit platforms can access more than 4GB of memory without workarounds. With 32-bit platforms there are several issues that require workaround solutions for databases that use lots of memory, for example refer to Using Very Large Memory (VLM). If you are not sure whether you are on a 32-bit or 64-bit hardware, run dmidecode or cat /proc/cpuinfo. Running uname -a can be misleading since 32-bit Linux kernels can run on x86-64 platforms. But if uname -a displays x86_64, then you are running a 64-bit Linux kernel on a x86-64 platform. 
+
+
+32-bit Architecture
+
+The RHEL 3/4 smp kernel can be used on systems with up to 16 GB of RAM. The hugemem kernel is required in order to use all the memory on systems that have more than 16GB of RAM up to 64GB. However, I recommend the hugemem kernel even on systems that have 8GB of RAM or more due to the potential issue of "low memory" starvation (see next section) that can happen on database systems with 8 GB of RAM. The stability you get with the hugemem kernel on larger systems outperforms the performance overhead of address space switching. 
+
+With x86 architecture the first 16MB-896MB of physical memory is known as "low memory" (ZONE_NORMAL) which is permanently mapped into kernel space. Many kernel resources must live in the low memory zone. In fact, many kernel operations can only take place in this zone. This means that the low memory area is the most performance critical zone. For example, if you run many resources intensive applications/programs and/or use large physical memory, then "low memory" can become low since more kernel structures must be allocated in this area. Low memory starvation happens when LowFree in /proc/meminfo becomes very low accompanied by a sudden spike in paging activity. To free up memory in the low memory zone, the kernel bounces buffers aggressively between low memory and high memory which becomes noticeable as paging (don't confuse it with paging to the swap partition). If the kernel is unable to free up enough memory in the low memory zone, then the kernel can hang the system. 
+
+Paging activity can be monitored using the vmstat command or using the sar command (option '-B') which comes with the sysstat RPM. Since Linux tries to utilize the whole low memory zone, a low LowFree in /proc/meminfo does not necessarily mean that the system is out of low memory. However, when the system shows increased paging activity when LowFree gets below 50MB, then the hugemem kernel should be installed. The stability you gain from using the hugemem kernel makes up for any performance impact resulting from the 4GB-4GB kernel/user memory split in this kernel (a classic 32-bit x86 system splits the available 4 GB address space into 3 GB virtual memory space for user processes and a 1 GB space for the kernel). To see some allocations in the low memory zone, refer to /proc/meminfo and slabtop(1) for more information. Note that Huge Pages would free up memory in the low memory zone since the system has less bookkeeping to do for that part of virtual memory, see Large Memory Optimization (Big Pages, Huge Pages). 
+
+If you install the RHEL 3/4 hugemem kernel ensure that any proprietary drivers you are using (e.g. proprietary multipath drivers) are certified with the hugemem kernel. 
+
+In RHEL 2.1, the smp kernel is capable of handling up to 4GB of RAM. The kernel-enterprise kernel should be used for systems with more than 4GB of RAM up to 16GB. 
+
+
+64-bit Architecture
+
+This is the architecture that should be used whenever possible. If you can go with a x86-64 platform ensure that all drivers you need are supported on x86-64 (e.g. proprietary multipath drivers etc.) Furthermore, ensure that all the required applications are supported on x86-64 as well. 
+
+
+
+Kernel Upgrades
+Make sure to install the latest kernel where all proprietary drivers, if applicable, are certified/supported. 
+
+Note that proprietary drivers are often installed under /lib/modules/<kernel-version>/kernel/drivers/addon. For example, the EMC PowerPath drivers can be found in the following directory when running the 2.4.21-32.0.1.ELhugemem kernel: 
+$ ls -al /lib/modules/2.4.21-32.0.1.ELhugemem/kernel/drivers/addon/emcpower
+total 732 
+drwxr-xr-x    2 root     root         4096 Aug 20 13:50 . 
+drwxr-xr-x   19 root     root         4096 Aug 20 13:50 .. 
+-rw-r--r--    1 root     root        14179 Aug 20 13:50 emcphr.o 
+-rw-r--r--    1 root     root         2033 Aug 20 13:50 emcpioc.o 
+-rw-r--r--    1 root     root        91909 Aug 20 13:50 emcpmpaa.o 
+-rw-r--r--    1 root     root       131283 Aug 20 13:50 emcpmpap.o 
+-rw-r--r--    1 root     root       113922 Aug 20 13:50 emcpmpc.o 
+-rw-r--r--    1 root     root        75380 Aug 20 13:50 emcpmp.o 
+-rw-r--r--    1 root     root       263243 Aug 20 13:50 emcp.o 
+-rw-r--r--    1 root     root         8294 Aug 20 13:50 emcpsf.o 
+$
+
+Therefore, when you upgrade the kernel you must ensure that all proprietary modules can be found in the right directory so that the kernel can load them. 
+
+To check which kernels are installed, run the following command: 
+$ rpm -qa | grep kernel
+
+To check which kernel is currently running, execute the following command: 
+$ uname -r
+
+For example, to install the 2.4.21-32.0.1.ELhugemem kernel, download the kernel-hugemem RPM and execute the following command: 
+# rpm -ivh kernel-hugemem-2.4.21-32.0.1.EL.i686.rpm
+
+Never upgrade the kernel sing the RPM option '-U'. The previous kernel should always be available if the newer kernel does not boot or work properly. 
+
+To make sure the right kernel is booted, check the /etc/grub.conf file if you use GRUB and change the "default" attribute if necessary. Here is an example: 
+default=0
+timeout=10 
+splashimage=(hd0,0)/grub/splash.xpm.gz 
+title Red Hat Enterprise Linux AS (2.4.21-32.0.1.ELhugemem)
+        root (hd0,0) 
+        kernel /vmlinuz-2.4.21-32.0.1.ELhugemem ro root=/dev/sda2 reboot=warm 
+        initrd /initrd-2.4.21-32.0.1.ELhugemem.img 
+title Red Hat Enterprise Linux AS (2.4.21-32.0.1.ELsmp) 
+        root (hd0,0) 
+        kernel /vmlinuz-2.4.21-32.0.1.ELsmp ro root=/dev/sda2 reboot=warm 
+        initrd /initrd-2.4.21-32.0.1.ELsmp.img
+
+In this example, the "default" attribute is set to "0" which means that the 2.4.21-32.0.1.ELhugemem kernel will be booted. If the "default" attribute would be set to "1", then 2.4.21-32.0.1.ELsmp would be booted. 
+
+After you installed the newer kernel reboot the system. 
+
+Once you are sure that you don't need the old kernel anymore, you can remove the old kernel by running: 
+# rpm -e <OldKernelVersion>
+When you remove a kernel, you don't need to update /etc/grub.conf. 
+
+
+
+Kernel Boot Parameters
+General
+
+The Linux kernel accepts boot parameters when the kernel is started. Very often it's used to provide information to the kernel about hardware parameters where the kernel would have issues/problems or to overwrite default values. 
+
+For a list of kernel parameters in RHEL4, see /usr/share/doc/kernel-doc-2.6.9/Documentation/kernel-parameters.txt. This file does not exist if the kernel-doc RPM is not installed. And for a list of kernel parameters in RHEL3 and RHEL2.1, see /usr/src/linux-2.4/Documentation/kernel-parameters.txt which comes with the kernel-doc RPM. 
+
+I/O Scheduler
+
+Starting with the 2.6 kernel, i.e. RHEL 4, the I/O scheduler can be changed at boot time which controls the way the kernel commits reads and writes to disks. For more information on various I/O scheduler, see Choosing an I/O Scheduler for Red Hat Enterprise Linux 4 and the 2.6 Kernel. 
+
+The Completely Fair Queuing (CFQ) scheduler is the default algorithm in RHEL4 which is suitable for a wide variety of applications and provides a good compromise between throughput and latency. In comparison to the CFQ algorithm, the Deadline scheduler caps maximum latency per request and maintains a good disk throughput which is best for disk-intensive database applications. Hence, the Deadline scheduler is recommended for database systems. Also, at the time of this writing there is a bug in the CFQ scheduler which affects heavy I/O, see Metalink Bug:5041764. Even though this bug report talks about OCFS2 testing, this bug can also happen during heavy IO access to raw/block devices and as a consequence could evict RAC nodes. 
+
+To switch to the Deadline scheduler, the boot parameter elevator=deadline must be passed to the kernel that's being used. Edit the /etc/grub.conf file and add the following parameter to the kernel that's being used, in this example 2.4.21-32.0.1.ELhugemem: 
+title Red Hat Enterprise Linux AS (2.4.21-32.0.1.ELhugemem)
+        root (hd0,0) 
+        kernel /vmlinuz-2.4.21-32.0.1.ELhugemem ro root=/dev/sda2 elevator=deadline reboot=warm 
+        initrd /initrd-2.4.21-32.0.1.ELhugemem.img
+
+This entry tells the 2.4.21-32.0.1.ELhugemem kernel to use the Deadline scheduler. Make sure to reboot the system to activate the new scheduler. 
+
+
+
+Memory Usage and Page Cache
+
+Checking Memory Usage 
+
+To determine the size and usage of memory, you can enter the following command: 
+grep MemTotal /proc/meminfo
+You can find a detailed description of the entries in /proc/meminfo at http://www.redhat.com/advice/tips/meminfo.html. 
+
+Alternatively, you can use the free(1) command to check the memory: 
+$ free
+             total       used       free     shared    buffers     cached
+Mem:       4040360    4012200      28160          0     176628    3571348
+-/+ buffers/cache:     264224    3776136
+Swap:      4200956      12184    4188772
+$
+
+In this example the total amount of available memory is 4040360 KB. 264224 KB are used by processes and 3776136 KB are free for other applications. Don't get confused by the first line which shows that 28160KB are free! If you look at the usage figures you can see that most of the memory use is for buffers and cache since Linux always tries to use RAM to the fullest extent to speed up disk operations. Using available memory for buffers (file system metadata) and cache (pages with actual contents of files or block devices) helps the system to run faster because disk information is already in memory which saves I/O. If space is needed by programs or applications like Oracle, then Linux will free up the buffers and cache to yield memory for the applications. So if your system runs for a while you will usually see a small number under the field "free" on the first line. 
+
+
+Tuning Page Cache 
+
+Page Cache is a disk cache which holds data of files and executable programs, i.e. pages with actual contents of files or block devices. Page Cache (disk cache) is used to reduce the number of disk reads. To control the percentage of total memory used for page cache in RHEL 3, the following kernel parameter can be changed: 
+# cat /proc/sys/vm/pagecache
+1       15      30
+
+The above three values are usually good for database systems. It is not recommended to set the third value very high like 100 as it used to be with older RHEL 3 kernels. This can cause significant performance problems for database systems. If you upgrade to a newer kernel like 2.4.21-37, then these values will automatically change to "1 15 30" unless it's set to different values in /etc/sysctl.conf. For information on tuning the pagecache kernel parameter, I recommend reading the excellent article Understanding Virtual Memory. Note this kernel parameter does not exist in RHEL 4. 
+
+The pagecache parameters can be changed in the proc file system without reboot: 
+# echo "1 15 30" > /proc/sys/vm/pagecache
+Alternatively, you can use sysctl(8) to change it: 
+# sysctl -w vm.pagecache="1 15 30"
+To make the change permanent, add the following line to the file /etc/sysctl.conf. This file is used during the boot process. 
+# echo "vm.pagecache=1 15 30" >> /etc/sysctl.conf
+
+
+Swap Space
+General 
+
+In some cases it's good for the swap partition to be used. For example, long running processes often access only a subset of the page frames they obtained. This means that the swap partition can savely be used even if memory is available because system memory could be better served for disk cache to improve overall system performance. In fact, in the 2.6 kernel, i.e. RHEL 4, you can define a threshold when processes should be swapped out in favor of I/O caching. This can be tuned with the /proc/sys/vm/swappiness kernel parameter. The default value of /proc/sys/vm/swappiness is 60 which means that applications and programs that have not done a lot lately can be swapped out. Higher values will provide more I/O cache and lower values will wait longer to swap out idle applications. 
+
+Depending on the system profile you may see that swap usage slowly increases with system uptime. To display swap usage you can run the free(1) command or you can check the /proc/meminfo file. When the system uses swap space it will sometimes not decrease afterward. This saves I/O if memory is needed and pages don't have to be swapped out again when the pages are already in the swap space. However, if swap usage gets close to 80% - 100%, then a closer look should be taken at the system, see also Checking Swap Space Size and Usage. Constant swapping should be avoided at all cost. 
+
+Note, never add a permanent swap file to the system due to the performance impact of the filesystem layer. 
+
+
+Swap Size Recommendations 
+
+According to Oracle9i Installation Guide Release 2 a minimum of 512MB of RAM is required to install Oracle9i Server. 
+According to Oracle Database Installation Guide 10g Release 2 at least 1024MB of RAM is required for 10g R2. 
+
+For 10g R2, Oracle gives the following swap space requirement: 
+  RAM               Swap Space
+  --------------------------------------------
+  1 GB - 2 GB       1.5 times the size of RAM
+  2 GB - 8 GB       Equal to the size of RAM
+  more than 8GB     0.75 times the size of RAM
+
+
+
+Checking Swap Space Size and Usage 
+
+You can check the size and current usage of swap space by running one of the following two commands: 
+grep SwapTotal /proc/meminfo
+cat /proc/swaps
+free
+
+
+Swap usage may slowly increase as shown above. If swap usage continues to grow and gets close to 80% - 100% then one of the following choices needs to be made:
+- Add more RAM or reduce the size of the SGA
+- Increase the size of the swap space
+
+If you see constant swapping, then you need to either add more RAM or reduce the size of the SGA. Constant swapping should be avoided at all cost. You can check current swap activity using the following commands: 
+$ vmstat 3 100
+procs                      memory      swap          io     system         cpu
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in    cs us sy id wa
+ 1  0      0 972488   7148  20848    0    0   856     6  138    53  0  0 99  0
+ 0  1      0 962204   9388  20848    0    0   747     0 4389  8859 23 24 11 41
+ 0  1      0 959500  10728  20848    0    0   440   313 1496  2345  4  7  0 89
+ 0  1      0 956912  12216  20848    0    0   496     0 2294  4224 10 13  0 77
+ 1  1      0 951600  15228  20848    0    0   997   264 2241  3945  6 13  0 81
+ 0  1      0 947860  17188  20848    0    0   647   280 2386  3985  9  9  1 80
+ 0  1      0 944932  19304  20848    0    0   705     0 1501  2580  4  9  0 87
+
+The fields si and so show the amount of memory paged in from disk and paged out to disk, respectively. If the server shows continuous swap activity then more memory should be added or the SGA size should be reduced. To check the history of swap activity, you can use the sar command.
+For example, to check swap activity from Oct 12th: 
+# ls -al /var/log/sa | grep "Oct 12"
+-rw-r--r--    1 root     root      2333308 Oct 12 23:55 sa12
+-rw-r--r--    1 root     root      4354749 Oct 12 23:53 sar12
+# sar -W -f /var/log/sa/sa12
+Linux 2.4.21-32.0.1.ELhugemem (rac01prd)       10/12/2005
+ 
+12:00:00 AM  pswpin/s pswpout/s
+12:05:00 AM      0.00      0.00
+12:10:00 AM      0.00      0.00
+12:15:00 AM      0.00      0.00
+12:20:00 AM      0.00      0.00
+12:25:00 AM      0.00      0.00
+12:30:00 AM      0.00      0.00
+...
+
+The fields pswpin and pswpout show the total number of pages brought in and out per second, respectively. 
+
+If the server shows sporadic swap activity or swap activity for a short period time at certain invervals, then you can either add more swap space or RAM. If swap usage is already very large (don't confuse it with constant swapping), then I would add more RAM. 
+
+
+
+Setting Shared Memory
+Shared memory allows processes to access common structures and data by placing them in shared memory segments. It's the fastest form of Interprocess Communication (IPC) available since no kernel involvement occurs when data is passed between the processes. In fact, data does not need to be copied between the processes. 
+
+Oracle uses shared memory segments for the Shared Global Area (SGA) which is an area of memory that is shared by Oracle processes. The size of the SGA has a significant impact to Oracle's performance since it holds database buffer cache and much more. 
+
+To see all shared memory settings, execute: 
+$ ipcs -lm
+
+Setting SHMMAX Parameter 
+
+This parameter defines the maximum size in bytes of a single shared memory segment that a Linux process can allocate in its virtual address space. For example, if you use the RHEL 3 smp kernel on a 32-bit platform (x86), then the virtual address space for a user process is 3 GB. If you use the RHEL 3 hugemem kernel on a 32-bit platform (x86), then the virtual address space for a user process is almost 4GB. Hence, setting SHMMAX to 4 GB - 1 byte (4294967295 bytes) on a smp kernel on a 32-bit architecture won't increase the maximum size of a shared memory segment to 4 GB -1. Even setting SHMMAX to 4 GB - 1 byte using the hugemem kernel on a 32-bit architecture won't enable a process to get such a large shared memory segment. In fact, the upper limit for a shared memory segment for an Oracle 10g R1 SGA using the hugemem kernel is roughly 3.42 GB (~3.67 billion bytes) since virtual address space is also needed for other things like shared libraries. This means if you have three 2 GB shared memory segments on a 32-bit system, no process can attach to more than one shared memory segment at a time. Also note if you set SHMMAX to 4294967296 bytes (4*1024*1024*1024=4GB) on a 32-bit system, then SHMMAX will essentially bet set to 0 bytes since it wraps around the 4GB value. This means that SHMMAX should not exceed 4294967295 on a 32-bit system. On x86-64 platforms, SHMMAX can be much larger than 4GB since the virtual address space is not limited by 32 bits. 
+
+Since the SGA is comprised of shared memory, SHMMAX can potentially limit the size of the SGA. SHMMAX should be slightly larger than the SGA size. If SHMMAX is too small, you can get error messages similar to this one: 
+ORA-27123: unable to attach to shared memory segment
+It is highly recommended that the shared memory fits into the Big Pages or Huge Pages pool, see Large Memory Optimization (Big Pages, Huge Pages). 
+
+To increase the default maximum SGA size on x86 RHEL 2.1 systems without VLM, refer to Growing the Oracle SGA to 2.7 GB in x86 RHEL 2.1 Without VLM. 
+To increase the default maximum SGA size on x86 RHEL 3/4 systems without VLM, refer to Growing the Oracle SGA to 2.7/3.42 GB in x86 RHEL 3/4 Without VLM. 
+
+To determine the maximum size of a shared memory segment, run: 
+# cat /proc/sys/kernel/shmmax
+2147483648
+
+The default shared memory limit for SHMMAX can be changed in the proc file system without reboot: 
+# echo 2147483648 > /proc/sys/kernel/shmmax
+Alternatively, you can use sysctl(8) to change it: 
+# sysctl -w kernel.shmmax=2147483648
+To make a change permanent, add the following line to the file /etc/sysctl.conf (your setting may vary). This file is used during the boot process. 
+# echo "kernel.shmmax=2147483648" >> /etc/sysctl.conf
+
+Setting SHMMNI Parameter 
+
+This parameter sets the system wide maximum number of shared memory segments. 
+
+Oracle recommends SHMMNI to be at least 4096 for Oracle 10g. For Oracle 9i on x86 the recommended minimum setting is lower. Since these recommendations are minimum settings, it's best to set it always to at least 4096 for 9i and 10g databases on x86 and x86-64 platforms. 
+
+To determine the system wide maximum number of shared memory segments, run: 
+# cat /proc/sys/kernel/shmmni
+4096
+
+The default shared memory limit for SHMMNI can be changed in the proc file system without reboot: 
+# echo 4096 > /proc/sys/kernel/shmmni
+Alternatively, you can use sysctl(8) to change it: 
+# sysctl -w kernel.shmmni=4096
+To make a change permanent, add the following line to the file /etc/sysctl.conf. This file is used during the boot process. 
+# echo "kernel.shmmni=4096" >> /etc/sysctl.conf
+
+Setting SHMALL Parameter 
+
+This parameter sets the total amount of shared memory pages that can be used system wide. Hence, SHMALL should always be at least ceil(shmmax/PAGE_SIZE). 
+
+The default size for SHMALL in RHEL 3/4 and 2.1 is 2097152 which is also Oracle's recommended minimum setting for 9i and 10g on x86 and x86-64 platforms. In most cases this setting should be sufficient since it means that the total amount of shared memory available on the system is 2097152*4096 bytes (shmall*PAGE_SIZE) which is 8 GB. PAGE_SIZE is usually 4096 bytes unless you use Big Pages or Huge Pages which supports the configuration of larger memory pages. 
+
+If you are not sure what the default PAGE_SIZE is on your Linux system, you can run the following command: 
+$ getconf PAGE_SIZE
+4096
+
+To determine the system wide maximum number of shared memory pages, run: 
+# cat /proc/sys/kernel/shmall
+2097152
+
+The default shared memory limit for SHMALL can be changed in the proc file system without reboot: 
+# echo 2097152 > /proc/sys/kernel/shmall
+Alternatively, you can use sysctl(8) to change it: 
+# sysctl -w kernel.shmall=2097152
+To make a change permanent, add the following line to the file /etc/sysctl.conf. This file is used during the boot process. 
+# echo "kernel.shmall=2097152" >> /etc/sysctl.conf
+
+
+Removing Shared Memory
+
+Sometimes after an instance crash you may have to remove Oracle's shared memory segment(s) manually. 
+
+To see all shared memory segments that are allocated on the system, execute: 
+$ ipcs -m
+
+------ Shared Memory Segments --------
+key        shmid      owner      perms      bytes      nattch     status
+0x8f6e2129 98305      oracle    600        77694523   0
+0x2f629238 65536      oracle    640        2736783360 35
+0x00000000 32768      oracle    640        2736783360 0           dest
+
+
+In this example you can see that three shared memory segments have been allocated. The output also shows that shmid 32768 is an abandoned shared memory segment from a past ungraceful Oracle shutdown. Status "dest" means that this memory segment is marked to be destroyed. To find out more about this shared memory segment you can run: 
+$ ipcs -m -i 32768
+Shared memory Segment shmid=32768
+uid=500 gid=501 cuid=500 cgid=501
+mode=0640 access_perms=0640
+bytes=2736783360 lpid=3688 cpid=3652 nattch=0
+att_time=Sat Oct 29 13:36:52 2005
+det_time=Sat Oct 29 13:36:52 2005
+change_time=Sat Oct 29 11:21:06 2005
+
+
+To remove the shared memory segment, you could copy/paste shmid and execute: 
+$ ipcrm shm 32768
+
+
+Another approach to remove shared memory is to use Oracle's sysresv utility. Here are a few self explanatory examples on how to use sysresv: 
+
+Checking Oracle's IPC resources: 
+$ sysresv
+
+IPC Resources for ORACLE_SID "orcl" :
+Shared Memory
+ID              KEY
+No shared memory segments used
+Semaphores:
+ID              KEY
+No semaphore resources used
+Oracle Instance not alive for sid "orcl"
+$
+
+
+Instance is up and running: 
+$ sysresv -i
+
+IPC Resources for ORACLE_SID "orcl" :
+Shared Memory:
+ID              KEY
+2818058         0xdc70f4e4
+Semaphores:
+ID              KEY
+688128          0xb11a5934
+Oracle Instance alive for sid "orcl"
+SYSRESV-005: Warning
+        Instance maybe alive - aborting remove for sid "orcl"
+$
+
+
+Instance has crashed and resources were not released: 
+$ sysresv -i
+
+IPC Resources for ORACLE_SID "orcl" :
+Shared Memory:
+ID              KEY
+32768           0xdc70f4e4
+Semaphores:
+ID              KEY
+98304           0xb11a5934
+Oracle Instance not alive for sid "orcl"
+Remove ipc resources for sid "orcl" (y/n)?y
+Done removing ipc resources for sid "orcl"
+$
+
+
+
+Setting Semaphores
+Semaphores can best be described as counters which are used to provide synchronization between processes or between threads within a process for shared resources like shared memories. System V semaphores support semaphore sets where each one is a counting semaphore. So when an application requests semaphores, the kernel releases them in sets. The number of semaphores per set can be defined through the kernel parameter SEMMSL. 
+
+To see all semaphore settings, run: 
+ipcs -ls
+
+The SEMMSL Parameter 
+
+This parameter defines the maximum number of semaphores per semaphore set. 
+
+Oracle recommends SEMMSL to be at least 250 for 9i R2 and 10g R1/R2 databases except for 9i R2 on x86 platforms where the minimum value is lower. Since these recommendations are minimum settings, it's best to set it always to at least 250 for 9i and 10g databases on x86 and x86-64 platforms. 
+
+NOTE:
+If a database gets thousands of concurrent connections where the ora.init parameter PROCESSES is very large, then SEMMSL should be larger as well. Note what Metalink Note:187405.1 and Note:184821.1 have to say regarding SEMMSL: "The SEMMSL setting should be 10 plus the largest PROCESSES parameter of any Oracle database on the system". Even though these notes talk about 9i databases this SEMMSL rule also applies to 10g databases. I've seen low SEMMSL settings to be an issue for 10g RAC databases where Oracle recommended to increase SEMMSL and to calculate it according to the rule mentioned in these notes. An example for setting semaphores for higher PROCESSES settings can be found at Example for Semaphore Settings. 
+
+The SEMMNI Parameter 
+
+This parameter defines the maximum number of semaphore sets for the entire Linux system. 
+
+Oracle recommends SEMMNI to be at least 128 for 9i R2 and 10g R1/R2 databases except for 9i R2 on x86 platforms where the minimum value is lower. Since these recommendations are minimum settings, it's best to set it always to at least 128 for 9i and 10g databases on x86 and x86-64 platforms. 
+
+The SEMMNS Parameter 
+
+This parameter defines the total number of semaphores (not semaphore sets) for the entire Linux system. A semaphore set can have more than one semaphore, and as the semget(2) man page explains, values greater than SEMMSL * SEMMNI makes it irrelevant. The maximum number of semaphores that can be allocated on a Linux system will be the lesser of: SEMMNS or (SEMMSL * SEMMNI). 
+
+Oracle recommends SEMMSL to be at least 32000 for 9i R2 and 10g R1/R2 databases except for 9i R2 on x86 platforms where the minimum value is lower. Setting SEMMNS to 32000 ensures that SEMMSL * SEMMNI (250*128=32000) semaphores can be be used. Therefore it's recommended to set SEMMNS to at least 32000 for 9i and 10g databases on x86 and x86-64 platforms. 
+
+The SEMOPM Parameter 
+
+This parameter defines the maximum number of semaphore operations that can be performed per semop(2) system call (semaphore call). The semop(2) function provides the ability to do operations for multiple semaphores with one semop(2) system call. Since a semaphore set can have the maximum number of SEMMSL semaphores per semaphore set, it is often recommended to set SEMOPM equal to SEMMSL. 
+
+Oracle recommends to set SEMOPM to a minimum value of 100 for 9i R2 and 10g R1/R2 databases on x86 and x86-64 platforms. 
+
+Setting Semaphore Parameters 
+
+To determine the values of the four described semaphore parameters, run: 
+# cat /proc/sys/kernel/sem
+250     32000   32      128
+
+These values represent SEMMSL, SEMMNS, SEMOPM, and SEMMNI. 
+
+Alternatively, you can run: 
+# ipcs -ls
+All four described semaphore parameters can be changed in the proc file system without reboot: 
+# echo 250 32000 100 128 > /proc/sys/kernel/sem
+Alternatively, you can use sysctl(8) to change it: 
+sysctl -w kernel.sem="250 32000 100 128"
+To make the change permanent, add or change the following line in the file /etc/sysctl.conf. This file is used during the boot process. 
+echo "kernel.sem=250 32000 100 128" >> /etc/sysctl.conf
+
+Example for Semaphore Settings 
+
+On systems where the ora.init parameter PROCESSES is very large, the semaphore settings need to be adjusted accordingly. 
+
+As shown at The SEMMSL Parameter the SEMMSL setting should be 10 plus the largest PROCESSES parameter of any Oracle database on the system. So if you have one database instance running on a system where PROCESSES is set to 5000, then SEMMSL should be set to 5010. 
+
+As shown at The SEMMNS Parameter the maximum number of semaphores that can be allocated on a Linux system will be the lesser of: SEMMNS or (SEMMSL * SEMMNI). Since SEMMNI can stay at 128, we need to increase SEMMNS to 641280 (5010*128). 
+
+As shown at The SEMOPM Parameter a semaphore set can have the maximum number of SEMMSL semaphores per semaphore set and it is recommended to set SEMOPM equal to SEMMSL. Since SEMMSL is set to 5010 the SEMOPM parameter should be set to 5010 as well. 
+
+Hence, if the ora.init parameter PROCESSES is set to 5000, then the semaphore settings should be as follows: 
+
+sysctl -w kernel.sem="5010 641280 5010 128"
+
+
+Setting File Handles
+The maximum number of file handles denotes the maximum number of open files on a Linux system. 
+
+Oracle recommends that the file handles for the entire system is set to at least 65536 for 9i R2 and 10g R1/2 for x86 and x86-64 platforms. 
+
+To determine the maximum number of file handles for the entire system, run: 
+cat /proc/sys/fs/file-max
+To determine the current usage of file handles, run: 
+$ cat /proc/sys/fs/file-nr
+1154    133     8192
+The file-nr file displays three parameters:
+  - Total allocated file handles
+  - Currently number of used file handles (2.4 kernel); Currently number of unused file handles (2.6 kernel)
+  - Maximum file handles that can be allocated (see also /proc/sys/fs/file-max)
+
+The kernel dynamically allocates file handles whenever a file handle is requested by an application but the kernel does not free these file handles when they are released by the application. The kernel recycles these file handles instead. This means that over time the total number of allocated file handles will increase even though the number of currently used file handles may be low. 
+
+The maximum number of file handles can be changed in the proc file system without reboot: 
+# echo 65536 > /proc/sys/fs/file-max
+Alternatively, you can use sysctl(8) to change it: 
+# sysctl -w fs.file-max=65536
+To make the change permanent, add or change the following line in the file /etc/sysctl.conf. This file is used during the boot process. 
+# echo "fs.file-max=65536" >> /etc/sysctl.conf
+
+
+Adjusting Network Settings
+
+Changing Network Adapter Settings 
+
+To check the speed and settings of network adapters, use the ethtool command which works now for most NICs. For example, to check the adapter settings of eth0 run: 
+# ethtool eth0
+To force a speed change to 1000 full duplex, run: 
+# ethtool -s eth0 speed 1000 duplex full autoneg off
+
+To make a speed change permanent for eth0, set or add the ETHTOOL_OPT environment variable in /etc/sysconfig/network-scripts/ifcfg-eth0: 
+ETHTOOL_OPTS="speed 1000 duplex full autoneg off"
+This environment variable is sourced in by the network scripts each time the network service is started. 
+
+
+Changing Network Kernel Settings 
+
+Oracle now uses UDP as the default protocol on Linux for interprocess communication, such as cache fusion buffer transfers between the instances. But starting with Oracle 10g network settings should be adjusted for standalone databases as well. 
+
+Oracle recommends the default and maximum send buffer size (SO_SNDBUF socket option) and receive buffer size (SO_RCVBUF socket option) to be set to 256 KB. The receive buffers are used by TCP and UDP to hold received data until it is read by the application. The receive buffer cannot overflow because the peer is not allowed to send data beyond the buffer size window. This means that datagrams will be discarded if they don't fit in the socket receive buffer. This could cause the sender to overwhelm the receiver. 
+
+The default and maximum window size can be changed in the proc file system without reboot: 
+# sysctl -w net.core.rmem_default=262144  # Default setting in bytes of the socket receive buffer
+# sysctl -w net.core.wmem_default=262144  # Default setting in bytes of the socket send buffer
+# sysctl -w net.core.rmem_max=262144      # Maximum socket receive buffer size which may be set by using the SO_RCVBUF socket option
+# sysctl -w net.core.wmem_max=262144      # Maximum socket send buffer size which may be set by using the SO_SNDBUF socket option
+To make the change permanent, add the following lines to the /etc/sysctl.conf file, which is used during the boot process: 
+net.core.rmem_default=262144
+net.core.wmem_default=262144
+net.core.rmem_max=262144
+net.core.wmem_max=262144
+To improve failover performance in a RAC cluster, consider changing the following IP kernel parameters as well: 
+net.ipv4.tcp_keepalive_time
+net.ipv4.tcp_keepalive_intvl
+net.ipv4.tcp_retries2
+net.ipv4.tcp_syn_retries
+
+Changing these settings may be highly dependent on your system, network, and other applications. For suggestions, see Metalink Note:249213.1 and Note:265194.1. 
+
+
+On RHEL systems the default range of IP port numbers that are allowed for TCP and UDP traffic on the server is too low for 9i and 10g systems. Oracle recommends the following port range: 
+# sysctl -w net.ipv4.ip_local_port_range="1024 65000"
+To make the change permanent, add the following line to the /etc/sysctl.conf file, which is used during the boot process: 
+net.ipv4.ip_local_port_range=1024 65000
+The first number is the first local port allowed for TCP and UDP traffic, and the second number is the last port number. 
+
+
+Flow Control for e1000 NICs 
+
+The e1000 NICs don't have flow control enabled in the 2.6 kernel, i.e RHEL 4. If you have heavy traffic, then the RAC interconnects may lose blocks, see Metalink Bug:5058952. For more information on flow control, see Wikipedia Flow control. 
+
+To enable Receive flow control for e1000 NICs, add the following line to the /etc/modprobe.conf file: 
+options e1000 FlowControl=1
+The e1000 module needs to be reloaded for the change to take effect. Once the module is loaded with flow control, you should see e1000 flow control module messages in /var/log/messages. 
+
+
+
+Setting Shell Limits for the Oracle User
+Most shells like Bash provide control over various resources like the maximum allowable number of open file descriptors or the maximum number of processes available to a user. 
+
+To see all shell limits, run: 
+ulimit -a
+For more information on ulimit for the Bash shell, see man bash and search for ulimit. 
+
+NOTE:
+On some Linux systems setting "hard" and "soft" limits in the following examples might not work properly when you login as oracle via SSH. It might work if you log in as root and su to oracle. If you have this problem try to set UsePrivilegeSeparation to "no" in /etc/ssh/sshd_config and restart the SSH daemon by executing service sshd restart. The privilege separation does not work properly with PAM on some Linux systems. Make sure to talk to the Unix and/or security teams before disabling the SSH security feature "Privilege Separation". 
+
+
+Limiting Maximum Number of Open File Descriptors for the Oracle User 
+
+After /proc/sys/fs/file-max has been changed, see Setting File Handles, there is still a per user limit of maximum open file descriptors: 
+$ su - oracle
+$ ulimit -n
+1024
+$
+
+To change this limit, edit the /etc/security/limits.conf file as root and make the following changes or add the following lines, respectively: 
+oracle           soft    nofile          4096
+oracle           hard    nofile          63536
+
+The "soft limit" in the first line defines the number of file handles or open files that the Oracle user will have after login. If the Oracle user gets error messages about running out of file handles, then the Oracle user can increase the number of file handles like in this example up to 63536 ("hard limit") by executing the following command: 
+
+ulimit -n 63536
+You can set the "soft" and "hard" limits higher if necessary. 
+
+NOTE:
+I do not recommend to set the "hard" limit for nofile for the oracle user equal to /proc/sys/fs/file-max. If you do that and the user uses up all the file handles, then the entire system will run out of file handles. This could mean that you won't be able to initiate new logins any more since the system won't be able to open any PAM modules that are required for the login process. That's why I set the hard limit to 63536 and not 65536. 
+
+That these limits work you also need to ensure that pam_limits is configured in the /etc/pam.d/system-auth file, or in /etc/pam.d/sshd for ssh, /etc/pam.d/su for su, or /etc/pam.d/login for local logins and telnet if you don't want to enable it for all login methods. Here are the two session entries I have in my /etc/pam.d/system-auth file: 
+session     required      /lib/security/$ISA/pam_limits.so
+session     required      /lib/security/$ISA/pam_unix.so
+
+Now login to the oracle user account since the changes will become effective for new login sessions only. Note the ulimit options are different for other shells. 
+$ su - oracle
+$ ulimit -n
+4096
+$
+
+The default limit for oracle is now 4096 and the oracle user can increase the number of file handles up to 63536: 
+$ su - oracle
+$ ulimit -n
+4096
+$ ulimit -n 63536
+$ ulimit -n
+63536
+$
+To make this change permanent, you could add "ulimit -n 63536" (for bash) to the ~oracle/.bash_profile file which is the user startup file for the bash shell on Red Hat Linux (to verify your shell execute echo $SHELL). To do this you could simply copy/paste the following commands for oracle's bash shell: 
+su - oracle
+cat >> ~oracle/.bash_profile << EOF
+ulimit -n 63536
+EOF
+To make the above changes permanent, you could also set the soft limit equal to the hard limit in /etc/security/limits.conf which I prefer: 
+oracle           soft    nofile          63536
+oracle           hard    nofile          63536
+
+
+
+Limiting Maximum Number of Processes for the Oracle User 
+
+After reading the procedure at Limiting Maximum Number of Open File Descriptors for the Oracle User you should now have an understanding of "soft" and "hard" limits and how to change shell limits. 
+
+To see the current limit of the maximum number of processes for the oracle user, run: 
+$ su - oracle
+$ ulimit -u
+
+Note the ulimit options are different for other shells. 
+
+To change the "soft" and "hard" limits for the maximum number of processes for the oracle user, add the following lines to the /etc/security/limits.conf file: 
+oracle           soft    nproc          2047
+oracle           hard    nproc          16384
+
+To make this change permanent, you could add "ulimit -u 16384" (for bash) to the ~oracle/.bash_profile file which is the user startup file for the bash shell on Red Hat Linux (to verify your shell execute echo $SHELL). To do this you could simply copy/paste the following commands for oracle's bash shell: 
+su - oracle
+cat >> ~oracle/.bash_profile << EOF
+ulimit -u 16384
+EOF
+To make the above changes permanent, you could also set the soft limit equal to the hard limit in /etc/security/limits.conf which I prefer: 
+oracle           soft    nproc          16384
+oracle           hard    nproc          16384
+
+
+
+
+Enabling Asynchronous I/O Support
+Asynchronous I/O permits Oracle to continue processing after issuing I/Os requests which leads to higher I/O performance. RHEL also allows Oracle to issue multiple simultaneous I/O requests with a single system call. This reduces context switch overhead and allows the kernel to optimize disk activity. 
+
+To enable asynchronous I/O in Oracle Database, it is necessary to relink Oracle 9i and 10g Release 1. Note that 10g Release 2 is shipped with asynchronous I/O support enabled and does not need to be relinked. But you may have to apply a patch, see below. 
+
+
+Relinking Oracle9i R2 to Enable Asynchronous I/O Support 
+
+Note for Oracle 9iR2 on RHEL 3/4 the 9.2.0.4 patchset or higher needs to be installed together with another patch for async I/O, see Metalink Note:279069.1. 
+
+To relink Oracle9i R2 for async I/O, execute the following commands: 
+# shutdown Oracle
+SQL> shutdown
+
+su - oracle
+$ cd $ORACLE_HOME/rdbms/lib
+$ make -f ins_rdbms.mk async_on
+$ make -f ins_rdbms.mk ioracle
+
+# The last step creates a new "oracle" executable "$ORACLE_HOME/bin/oracle".
+# It backs up the old oracle executable to $ORACLE_HOME/bin/oracleO,
+# it sets the correct privileges for the new Oracle executable "oracle",
+# and moves the new executable "oracle" into the $ORACLE_HOME/bin directory.
+
+
+If asynchronous I/O needs to be disabled, execute the following commands: 
+# shutdown Oracle
+SQL> shutdown
+
+su - oracle
+$ cd $ORACLE_HOME/rdbms/lib
+$ make -f ins_rdbms.mk async_off
+$ make -f ins_rdbms.mk ioracle
+
+
+Relinking Oracle 10g to Enable Asynchronous I/O Support 
+
+Ensure that for 10g Release 1 and 2 the libaio and libaio-devel RPMs are installed on the system: 
+# rpm -q libaio libaio-devel
+libaio-0.3.96-5
+libaio-devel-0.3.96-5
+
+If you relink Oracle for async I/O without installing the libaio RPM, then you will get an error message similar to this one: 
+SQL> connect / as sysdba
+oracleorcl: error while loading shared libraries: libaio.so.1: cannot open shared object file: No such file or directory
+ERROR:
+ORA-12547: TNS:lost contact
+
+The libaio RPMs provide a Linux-native asynch I/O API which is a kernel-accelerated asynch I/O for the POSIX async I/O facility. 
+
+Note that 10g Release 2 is shipped with asynchronous I/O support enabled. This means that 10g Release 2 does not need to be relinked. However, there's a bug in Oracle 10.1.0.2 that causes async I/O not to be installed correctly which can result in poor DB performance, see Bug:3438751 and Note:270213.1. 
+
+To relink Oracle 10g R1 for async I/O, execute the following commands: 
+# shutdown Oracle
+SQL> shutdown
+
+su - oracle
+$ cd $ORACLE_HOME/rdbms/lib
+$ make PL_ORALIBS=-laio -f ins_rdbms.mk async_on
+
+
+If asynchronous I/O needs to be disabled, run the following commands: 
+# shutdown Oracle
+SQL> shutdown
+
+su - oracle
+$ cd $ORACLE_HOME/rdbms/lib
+$ make -f ins_rdbms.mk async_off
+
+
+Enabling Asynchronous I/O in Oracle 9i and 10g 
+
+To enable async I/O in Oracle, the disk_asynch_io parameter needs to be set to true: 
+disk_asynch_io=true
+
+Note this parameter is set to true by default in Oracle 9i and 10g: 
+SQL> show parameter disk_asynch_io;
+
+NAME                                 TYPE        VALUE
+------------------------------------ ----------- ------------------------------
+disk_asynch_io                       boolean     TRUE
+SQL>
+
+
+If you use filesystems instead of raw devices or ASM for datafiles, then you need to ensure that the datafiles reside on filesystems that support asynchronous I/O (e.g., OCFS/OCFS2, ext2, ext3). To do async I/O on filesystems the filesystemio_options parameter needs to be set to "asynch" in addition to disk_asynch_io=true: 
+filesystemio_options=asynch
+This parameter is platform-specific. By default, this parameter is set to none for Linux and thus needs to be changed: 
+SQL> show parameter filesystemio_options;
+
+NAME                                 TYPE        VALUE
+------------------------------------ ----------- ------------------------------
+filesystemio_options                 string      none
+SQL>
+
+The filesystemio_options can have the following values with Oracle9iR2:
+   asynch: This value enables asynchronous I/O on file system files.
+   directio: This value enables direct I/O on file system files.
+   setall: This value enables both asynchronous and direct I/O on file system files.
+   none: This value disables both asynchronous and direct I/O on file system files.
+
+If you also want to enable Direct I/O Support which is available in RHEL 3/4, set filesystemio_options to "setall". 
+
+Ensure that the datafiles reside on filesystems that support asynchronous I/O (e.g., OCFS, ext2, ext3). 
+
+
+Tuning Asynchronous I/O for Oracle 9i and 10g 
+
+For RHEL 3 it is recommended to set aio-max-size to 1048576 since Oracle uses I/Os of up to 1MB. It controls the maximum I/O size for asynchronous I/Os. Note this tuning parameter is not applicable to 2.6 kernel, i.e RHEL 4. 
+
+To determine the maximum I/O size in bytes, execute: 
+$ cat /proc/sys/fs/aio-max-size
+131072
+
+To change the maximum number of bytes without reboot: 
+# echo 1048576 > /proc/sys/fs/aio-max-size
+Alternatively, you can use sysctl(8) to change it: 
+# sysctl -w fs.aio-max-size=1048576
+To make the change permanent, add the following line to the /etc/sysctl.conf file. This file is used during the boot process: 
+$ echo "fs.aio-max-size=1048576" >> /etc/sysctl.conf
+
+Checking Asynchronous I/O Usage 
+
+To verify whether $ORACLE_HOME/bin/oracle was linked with async I/O, you can use the Linux commands ldd and nm. 
+
+In the following example, $ORACLE_HOME/bin/oracle was relinked with async I/O: 
+$ ldd $ORACLE_HOME/bin/oracle | grep libaio
+        libaio.so.1 => /usr/lib/libaio.so.1 (0x0093d000)
+$ nm $ORACLE_HOME/bin/oracle | grep io_getevent
+         w io_getevents@@LIBAIO_0.1
+$
+
+In the following example, $ORACLE_HOME/bin/oracle has NOT been relinked with async I/O: 
+$ ldd $ORACLE_HOME/bin/oracle | grep libaio
+$ nm $ORACLE_HOME/bin/oracle | grep io_getevent
+         w io_getevents
+$
+
+
+If $ORACLE_HOME/bin/oracle is relinked with async I/O it does not necessarily mean that Oracle is really using it. You also have to ensure that Oracle is configured to use async I/O calls, see Enabling Asynchronous I/O in Oracle 9i and 10g. 
+
+To verify whether Oracle is making async I/O calls, you can take a look at the /proc/slabinfo file assuming there are no other applications performing async I/O calls on the system. This file shows kernel slab cache information in real time. 
+
+On a RHEL 3 system where Oracle does NOT make async I/O calls, the output looks like this: 
+$ egrep "kioctx|kiocb" /proc/slabinfo
+kioctx                 0      0    128    0    0    1 : 1008  252
+kiocb                  0      0    128    0    0    1 : 1008  252
+$
+
+Once Oracle makes async I/O calls, the output on a RHEL 3 system will look like this: 
+$ egrep "kioctx|kiocb" /proc/slabinfo
+kioctx               690    690    128   23   23    1 : 1008  252
+kiocb              58446  65160    128 1971 2172    1 : 1008  252
+$
+
+The numbers in red (number of active objects) show whether Oracle makes async I/O calls. The output will look a little bit different in RHEL 4. However, the numbers in red will show same behavior in RHEL 3 and RHEL 4. The first column displays the cache names kioctx and kiocb. The second column shows the number of active objects currently in use. And the third column shows how many objects are available in total, used and unused. 
+
+To see kernel slab cache information in real time, you can also use the slabtop command: 
+$ slabtop
+ Active / Total Objects (% used)    : 293568 / 567030 (51.8%)
+ Active / Total Slabs (% used)      : 36283 / 36283 (100.0%)
+ Active / Total Caches (% used)     : 88 / 125 (70.4%)
+ Active / Total Size (% used)       : 81285.56K / 132176.36K (61.5%)
+ Minimum / Average / Maximum Object : 0.01K / 0.23K / 128.00K
+
+  OBJS ACTIVE  USE OBJ SIZE  SLABS OBJ/SLAB CACHE SIZE NAME
+178684  78396  43%    0.12K   5764       31     23056K size-128
+127632  36292  28%    0.16K   5318       24     21272K dentry_cache
+102815  74009  71%    0.69K  20563        5     82252K ext3_inode_cache
+ 71775  32434  45%    0.05K    957       75      3828K buffer_head
+ 19460  15050  77%    0.27K   1390       14      5560K radix_tree_node
+ 13090  13015  99%    0.03K    110      119       440K avtab_node
+ 12495  11956  95%    0.03K    105      119       420K size-32
+...
+
+Slab caches are a special memory pool in the kernel for adding and removing objects (e.g. data structures or data buffers) of the same size. Its a cache for commonly used objects where the kernel doesn't have to re-allocate and initialize the object each time it's being reused, and free the object each time it's being destroyed. The slab allocater scheme basically prevents memory fragmentation and it prevents the kernel from spending too much time allocating, initializing, and freeing the same objects. 
+
+
+
+Configuring I/O for Raw Partitions
+
+General 
+
+Raw partitions allow Oracle to bypass the OS cache. A raw device can be assigned or bound to block devices such as disk or disk partitions. When a raw device is bound to a disk, any read or write access to the raw device will perform a raw I/O with the disk. A raw I/O through the /dev/raw interface bypasses the kernel's block buffer cache entirely that is normally associated with block devices and goes right to the low-level device itself. By bypassing the cache it accesses a physical device directly which allows applications such as Oracle databases to have more control over the I/O to the physical device. In fact, Oracle does it's own data caching and raw devices allow Oracle to ensure that data gets written to the disk immediately without OS caching. 
+
+Since Automatic Storage Management (ASM) is the recommended option for large amounts of storage in RAC environments, the focus of this article and section is on the usage of raw devices and block devices for ASM. ASM offers many advantages over conventional filesystems. The ASM filesystem is not buffered and supports async I/O. It allows you to group sets of physical disks to logical entities as diskgroups. You can add or remove disks without downtime. In fact, you could move a whole database from one SAN storage to another storage without downtime. Also, ASM spreads I/O over all the available disks automatically to avoid hot spots. ASM does also it's own striping and offers mirroring. ASM can be setup using the ASM library driver or raw devices. Starting with 10g R2, neither is necessarily required, see next note. 
+
+NOTE:
+
+Since raw I/O is now being deprecated by the Linux community and RHEL 4, Oracle 10g R2 no longer requires raw devices for the database. Oracle 10g R2 automatically opens all block devices such as SCSI disks using the O_DIRECT flag, thus bypasses the OS cache. But for older Oracle Database and RHEL versions raw devices are still a recommended option for ASM and datafiles. For more information on using block devices, see Using Block Devices for Oracle 10g Release 2 in RHEL 4. Unfortunately, Oracle Clusterware R2 OUI still requires raw devices or a Cluster File System. 
+
+CAUTION:
+
+The name of the devices are assigned by Linux and is determined by the scan order of the bus. Therefore, the device names are not guaranteed to persist across reboots. For example, SCSI device /dev/sdb can change to /dev/sda if the scan order of the controllers is not configured. To force the scan order of the controllers, aliases can be set in /etc/modprobe.conf. For example: 
+alias scsi_hostadapter1 aic7xxx
+alias scsi_hostadapter2 lpfc
+These settings will guarantee that the Adaptec adapter for local storage is used first and then the Emulex adapter(s) for SAN storage. Fortunately, RHEL 4 has already addressed this issue by delaying the loading of lpfc (Emulex) and various qla (QLogic) drivers until after all other SCSI devices have been loaded. This means that the alias settings in this example would not be required in RHEL 4. For more information, see Red Hat Enterprise Linux AS 4 Release Notes. 
+
+Be also careful when adding/removing devices which can change device names on the system. Starting Oracle with incorrect device names or raw devices can cause damages to the database. For stable device naming in Linux 2.4 and 2.6, see Optimizing Linux I/O. 
+
+
+Basics of Raw Devices 
+
+To bind the first raw device /dev/raw/raw1 to the /dev/sdz SCSI disk or LUN you can execute the following command: 
+# raw /dev/raw/raw1 /dev/sdz
+
+Now when you run the dd command on /dev/raw/raw1, it will write directly to /dev/sdz bypassing the OS block buffer cache:
+(Warning: the following command will overwrite data on /dev/sdz) 
+# dd if=/dev/zero of=/dev/sdz count=1
+
+To permanently bind /dev/raw/raw1 to /dev/sdz, add an entry to the /etc/sysconfig/rawdevices file: 
+  /dev/raw/raw1 /dev/sdz
+
+Now when you run /etc/init.d/rawdevices it will read the /etc/sysconfig/rawdevices file and execute the raw command for each entry: 
+/etc/init.d/rawdevices start
+
+To have /etc/init.d/rawdevices run each time the system boot, it can be activated by executing the following command: 
+chkconfig rawdevices on
+
+
+Note for each block device you need to use another raw device. To bind the third raw device to the second partition of /dev/sdz, the entry in /etc/sysconfig/rawdevices would look like this: 
+  /dev/raw/raw3 /dev/sdz2
+
+Or to bind the 100th raw device to /dev/sdz, the entry in /etc/sysconfig/rawdevices would look like this: 
+  /dev/raw/raw100 /dev/sdz
+
+
+Using Raw Devices for Oracle Databases 
+
+Many guides and documentations show instructions on using the devices in /dev/raw/ for configuring raw devices for datafiles. I do not recommend to use the raw devices in /dev/raw/ for the following reason: When you configure raw devices for Oracle datafiles, you also have to change ownership and permissions of the devices in /dev/raw/ to allow Oracle to read and write to these raw devices. But all device names in /dev/raw/ are owned by the dev RPM. So when the Linux systems administrator upgrades the dev RPM which may happen as part of an OS update, then all device names in /dev/raw/ will automatically be recreated. This means that ownership and permissions must be set each time the dev RPM gets upgraded. Therefore I recommend to create all raw devices for Oracle datafiles in an Oracle data directory such as /u02. 
+
+For example, to create a new raw device for the system datafile system01.dbf in /u02/orcl/, execute the following command: 
+# mknod /u02/orcl/system01.dbf c 162 1
+
+This command creates a new raw device called /u02/orcl/system01.dbf with minor number 1 which is equivalent to the first raw device /dev/raw/raw1. The major number 162 designates the device as a raw device. A major number always identifies the driver associated with the device. 
+
+To grant oracle:dba read and write permissions, execute: 
+# chown oracle.dba /u02/orcl/system01.dbf
+# chown 660 /u02/orcl/system01.dbf
+
+To bind this new raw device to the first partition of /dev/sdb, add the following line to the /etc/sysconfig/rawdevices file: 
+  /u02/orcl/system01.dbf /dev/sdb1
+
+To activate the raw device, execute: 
+/etc/init.d/rawdevices start
+
+
+Here is an example for creating raw devices for ASM: 
+# mknod /u02/oradata/asmdisks/disk01 c 162 1
+# mknod /u02/oradata/asmdisks/disk02 c 162 2
+# mknod /u02/oradata/asmdisks/disk03 c 162 3
+# mknod /u02/oradata/asmdisks/disk03 c 162 4
+
+# chown oracle.dba /u02/oradata/asmdisks/disk01
+# chown oracle.dba /u02/oradata/asmdisks/disk02
+# chown oracle.dba /u02/oradata/asmdisks/disk03
+# chown oracle.dba /u02/oradata/asmdisks/disk04
+
+# chmod 660 /u02/oradata/asmdisks/disk01
+# chmod 660 /u02/oradata/asmdisks/disk02
+# chmod 660 /u02/oradata/asmdisks/disk03
+# chmod 660 /u02/oradata/asmdisks/disk04
+
+And the /etc/sysconfig/rawdevices file would look something like this if you use EMC PowerPath: 
+/u02/oradata/asmdisks/disk01 /dev/emcpowera
+/u02/oradata/asmdisks/disk02 /dev/emcpowerb
+/u02/oradata/asmdisks/disk03 /dev/emcpowerc
+/u02/oradata/asmdisks/disk04 /dev/emcpowerd
+
+
+In this example 4 raw devices have been created using minor numbers 1 through 4. This means that the devices /dev/raw/raw1../dev/raw/raw4 should not be used by any application on the system. But this should not be an issue since all raw devices should be configured in one place which is the /etc/sysconfig/rawdevices file. Note that you could also partition the LUNs or disks and configure a raw device for each disk partition. 
+
+
+Using Block Devices for Oracle 10g Release 2 in RHEL 4 
+
+For Oracle 10g Release 2 in RHEL 4 it is not recommended to use raw devices but to use block devices instead. Raw I/O is still available in RHEL 4 but it is now a deprecated interface. In fact, raw I/O has been deprecated by the Linux community. It has been replaced by the O_DIRECT flag which can be used for opening block devices to bypass the OS cache. Unfortunately, Oracle Clusterware R2 OUI has not been updated and still requires raw devices or a Cluster File System. There is also another bug, see bug number 5021707 at http://www.oracle.com/technology/tech/linux/validated-configurations/html/vc_dell6850-rhel4-cx500-1_1.html. 
+
+By default, reading and writing to block devices are buffered I/Os. Oracle 10g R2 now automatically opens all block devices such as SCSI disks using the O_DIRECT flag, thus bypassing the OS cache. For example, when you create disk groups for ASM and you want to use the SCSI block devices /dev/sdb and /dev/sdc, you can simply set the Disk Discovery Path to "/dev/sdb, /dev/sdc" to create the ASM disk group. There is no need to create raw devices and to point the Disk Discovery Path to it. 
+
+Using the ASM example from Using Raw Devices for Oracle Databases, the Oracle data directory could be setup the following way: 
+$ ln -s /dev/emcpowera /u02/oradata/asmdisks/disk01
+$ ln -s /dev/emcpowerb /u02/oradata/asmdisks/disk02
+$ ln -s /dev/emcpowerc /u02/oradata/asmdisks/disk03
+$ ln -s /dev/emcpowerd /u02/oradata/asmdisks/disk04
+
+And the following commands need to be executed after each reboot: 
+# chown oracle.dba /u02/oradata/asmdisks/*
+
+You need to ensure that the ownership of block devices is changed to oracle:dba or oracle:oinstall. Otherwise Oracle can't access the block devices and ASM disk discovery won't list them. You also need to ensure that the ownership of block devices is set after each reboot since Linux changes the ownership of block devices back to "brw-rw---- 1 root disk". 
+
+
+
+Large Memory Optimization (Big Pages, Huge Pages)
+Big Pages in RHEL2.1 and Huge Pages in RHEL 3/4 are very useful for large Oracle SGA sizes and in general for systems with large amount of physical memory. It optimizes the use of Translation Lookaside Buffers (TLB), locks these larger pages in RAM, and the system has less bookkeeping work to do for that part of virtual memory due to larger page sizes. This is a useful feature that should be used on x86 and x86-64 platforms. The default page size in Linux for x86 is 4KB. 
+
+Physical memory is partitioned into pages which are the basic unit of memory management. When a Linux process accesses a virtual address, the CPU must translate it into a physical address. Therefore, for each Linux process the kernel maintains a page table which is used by the CPU to translate virtual addresses into physical addresses. But before the CPU can do the translation it has to perform several physical memory reads to retrieve page table information. To speed up this translation process for future references to the same virtual address, the CPU saves information for recently accessed virtual addresses in its Translation Lookaside Buffers (TLB) which is a small but very fast cache in the CPU. The use of this cache makes virtual memory access very fast. Since TLB misses are expensive, TLB hits can be improved by mapping large contiguous physical memory regions by a small number of pages. So fewer TLB entries are required to cover larger virtual address ranges. A reduced page table size also means a reduction in memory management overhead. To use larger page sizes for shared memory, Big Pages (RHEL 2.1) or Huge Pages (RHEL 3/4) must be enabled which also locks these pages in physical memory. 
+
+
+Big Pages in RHEL 2.1 and Huge Pages in RHEL 3/4
+
+In RHEL 2.1 large memory pages can be configured using the Big Pages (bigpages) feature. In RHEL 3/4 Red Hat replaced Big Pages with a feature called Huge Pages (hugetlb) which behaves a little bit different. The Huge Pages feature in RHEL 3/4 allows you to dynamically allocate large memory pages without a reboot. Allocating and changing Big Pages in RHEL 2.1 always required a reboot. However, if memory gets too fragmented in RHEL 3/4 allocation of physically contiguous memory pages can fail and a reboot may become necessary. 
+
+The advantages of Big Pages and Huge Pages are:
+
+Increased performance by through increased TLB hits 
+Pages are locked in memory and are never swapped out which guarantees that shared memory like SGA remains in RAM 
+Contiguous pages are preallocated and cannot be used for anything else but for System V shared memory (e.g. SGA) 
+Less bookkeeping work for the kernel for that part of virtual memory due to larger page sizes 
+
+Usage of Big Pages and Huge Pages in Oracle 9i and 10g
+
+Big pages are supported implicitly in RHEL 2.1. But Huge Pages in RHEL 3/4 need to be requested explicitly by the application by using the SHM_HUGETLB flag when invoking the shmget() system call. This ensures that shared memory segments are allocated out of the Huge Pages pool. This is done automatically in Oracle 10g and 9i R2 (9.2.0.6) but earlier Oracle 9i R2 versions require a patch, see Metalink Note:262004.1. 
+
+
+Sizing Big Pages and Huge Pages
+
+With the Big Pages and Huge Pages feature you specify how many physically contiguous large memory pages should be allocated and pinned in RAM for shared memory like Oracle SGA. For example, if you have three Oracle instances running on a single system with 2 GB SGA each, then at least 6 GB of large pages should be allocated. This will ensure that all three SGAs use large pages and remain in main physical memory. Furthermore, if you use ASM on the same system, then I recommend to add an additional 200MB. I've seen ASM instances creating between 70 MB and 150 MB shared memory segments. And there might be other non-Oracle processes that allocate shared memory segments as well. 
+
+It is, however, not recommended to allocate too many Big or Huge Pages. These preallocated pages can only be used for shared memory. This means that unused Big or Huge Pages won't be available for other use than for shared memory allocations even if the system runs out of memory and starts swapping. Also take note that Huge Pages are not used for the ramfs shared memory filesystem, see Huge Pages and Shared Memory Filesystem in RHEL 3/4, but Big Pages can be used for the shm filesystem in RHEL 2.1. 
+
+
+Checking Shared Memory Before Starting Oracle Databases
+
+It is very important to always check the shared memory segments before starting an instance. If an abandoned shared memory segment from e.g. an instance crash is not removed, it will remain allocated in the Big Pages or Huge Pages pool. This could mean that new allocated shared memory segments for the new instance SGA won't fit into the Big Pages or Huge Pages pool. For more information on removing shared memory, see Removing Shared Memory. 
+
+
+Configuring Big Pages in RHEL 2.1
+
+Before configuring Big Pages, ensure to have read Sizing Big Pages and Huge Pages. 
+
+Note that Big Pages in x86 RHEL 2.1 can only be allocated and pinned above (approx) 860MB of physical RAM which is known as Highmem or high memory region in x86. Thus, Big Pages cannot be larger than Highmem. The total amount of memory in the high region can be obtained by reading the memory statistic HighTotal from the /proc/meminfo file: 
+$ grep "HighTotal" /proc/meminfo
+HighTotal:     9043840 kB 
+$
+
+
+The Big Pages feature can be enabled with the following command: 
+# echo "1" > /proc/sys/kernel/shm-use-bigpages
+
+Alternatively, you can use sysctl(8) to change it: 
+# sysctl -w kernel.shm-use-bigpages=1
+
+To make the change permanent, add the following line to the file /etc/sysctl.conf. This file is used during the boot process. 
+echo "kernel.shm-use-bigpages=1" >> /etc/sysctl.conf
+
+Setting kernel.shm-use-bigpages to 2 enables the Big Pages feature for the shmfs shared memory filesystem. Setting kernel.shm-use-bigpages to 0 disables the Big Pages feature. 
+
+
+In RHEL 2.1 the size of the Big Pages pool is configured by adding a parameter to the kernel boot command. For example, if you use GRUB and you want to set the Big Pages pool to 1000 MB, edit the /etc/grub.conf file and add the "bigpages" parameter as follows: 
+default=0
+timeout=10
+title Red Hat Linux Advanced Server (2.4.9-e.40enterprise)
+        root (hd0,0)
+        kernel /vmlinuz-2.4.9-e.40enterprise ro root=/dev/sda2 bigpages=1000MB
+        initrd /initrd-2.4.9-e.40enterprise.img
+title Red Hat Linux Advanced Server (2.4.9-e.40smp)
+        root (hd0,0)
+        kernel /vmlinuz-2.4.9-e.40smp ro root=/dev/sda2
+        initrd /initrd-2.4.9-e.40smp.img
+
+After this change the system must be rebooted: 
+# shutdown -r now
+
+After a system reboot the 1000 MB Big Pages pool should show up under BigPagesFree in /proc/meminfo. 
+grep BigPagesFree /proc/meminfo
+
+
+Note that if HighTotal in /proc/meminfo is 0 KB, then BigPagesFree will always be 0 KB as well since Big Pages can only be allocated and pinned above (approx) 860MB of physical RAM. 
+
+
+Configuring Huge Pages in RHEL 3
+
+Before configuring Huge Pages, ensure to have read Sizing Big Pages and Huge Pages. 
+
+In RHEL 3 the desired size of the Huge Pages pool is specified in megabytes. The size of the pool should be configured by the incremental size of the Huge Page size. To obtain the size of Huge Pages, execute the following command: 
+$ grep Hugepagesize /proc/meminfo
+Hugepagesize:     2048 kB
+$
+The number of Huge Pages can be configured and activated by setting hugetlb_pool in the proc filesystem. For example, to allocate a 1GB Huge Page pool, execute: 
+# echo 1024 > /proc/sys/vm/hugetlb_pool
+
+Alternatively, you can use sysctl(8) to change it: 
+# sysctl -w vm.hugetlb_pool=1024
+
+To make the change permanent, add the following line to the file /etc/sysctl.conf. This file is used during the boot process. The Huge Pages pool is usually guaranteed if requested at boot time: 
+# echo "vm.hugetlb_pool=1024" >> /etc/sysctl.conf
+
+
+If you allocate a large number of Huge Pages, the execution of the above commands can take a while. To verify whether the kernel was able to allocate the requested number of Huge Pages, execute: 
+$ grep HugePages_Total /proc/meminfo
+HugePages_Total:   512 
+$
+
+The output shows that 512 Huge Pages have been allocated. Since the size of Huge Pages on my system is 2048 KB, a Huge Page pool of 1GB has been allocated and pinned in physical memory. 
+
+If HugePages_Total is lower than what was requested with hugetlb_pool, then the system does either not have enough memory or there are not enough physically contiguous free pages. In the latter case the system needs to be rebooted which should give you a better chance of getting the memory. 
+
+To get the number of free Huge Pages on the system, execute: 
+$ grep HugePages_Free /proc/meminfo
+
+Free system memory will automatically be decreased by the size of the Huge Pages pool allocation regardless whether the pool is being used by an application like Oracle DB or not: 
+$ grep MemFree /proc/meminfo
+After an Oracle DB startup you can verify the usage of Huge Pages by checking whether the number of free Huge Pages has decreased: 
+$ grep HugePages_Free /proc/meminfo
+
+To free the Huge Pages pool, you can execute: 
+# echo 0 > /proc/sys/vm/hugetlb_pool
+This command usually takes a while to finish. 
+
+
+Configuring Huge Pages in RHEL 4
+
+Before configuring Huge Pages, ensure to have read Sizing Big Pages and Huge Pages. 
+
+In RHEL 4 the size of the Huge Pages pool is specified by the desired number of Huge Pages. To calculate the number of Huge Pages you first need to know the Huge Page size. To obtain the size of Huge Pages, execute the following command: 
+$ grep Hugepagesize /proc/meminfo
+Hugepagesize:     2048 kB
+$
+The output shows that the size of a Huge Page on my system is 2MB. This means if I want to allocate a 1GB Huge Pages pool, then I have to allocate 512 Huge Pages. The number of Huge Pages can be configured and activated by setting nr_hugepages in the proc filesystem. For example, to allocate 512 Huge Pages, execute: 
+# echo 512 > /proc/sys/vm/nr_hugepages
+
+Alternatively, you can use sysctl(8) to change it: 
+# sysctl -w vm.nr_hugepages=512
+
+To make the change permanent, add the following line to the file /etc/sysctl.conf. This file is used during the boot process. The Huge Pages pool is usually guaranteed if requested at boot time: 
+# echo "vm.nr_hugepages=512" >> /etc/sysctl.conf
+
+
+If you allocate a large number of Huge Pages, the execution of the above commands can take a while. To verify whether the kernel was able to allocate the requested number of Huge Pages, run: 
+$ grep HugePages_Total /proc/meminfo
+HugePages_Total:   512
+$
+
+The output shows that 512 Huge Pages have been allocated. Since the size of Huge Pages is 2048 KB, a Huge Page pool of 1GB has been allocated and pinned in physical memory. 
+
+If HugePages_Total is lower than what was requested with nr_hugepages, then the system does either not have enough memory or there are not enough physically contiguous free pages. In the latter case the system needs to be rebooted which should give you a better chance of getting the memory. 
+
+To get the number of free Huge Pages on the system, execute: 
+$ grep HugePages_Free /proc/meminfo
+
+Free system memory will automatically be decreased by the size of the Huge Pages pool allocation regardless whether the pool is being used by an application like Oracle DB or not: 
+$ grep MemFree /proc/meminfo
+
+NOTE: In order that an Oracle database can use Huge Pages in RHEL 4, you also need to increase the ulimit parameter "memlock" for the oracle user in /etc/security/limits.conf if "max locked memory" is not unlimited or too small, see ulimit -a or ulimit -l. For example: 
+oracle           soft    memlock         1048576
+oracle           hard    memlock         1048576
+
+The memlock parameter specifies how much memory the oracle user can lock into its address space. Note that Huge Pages are locked in physical memory. The memlock setting is specified in KB and must match the memory size of the number of Huge Pages that Oracle should be able to allocate. So if the Oracle database should be able to use 512 Huge Pages, then memlock must be set to at least 512 * Hugepagesize, which is on my system 1048576 KB (512*1024*2). If memlock is too small, then no single Huge Page will be allocated when the Oracle database starts. For more information on setting shell limits, see Setting Shell Limits for the Oracle User. 
+
+Now login as the oracle user again and verify the new memlock setting by executing ulimit -l before starting the database. 
+
+After an Oracle DB startup you can verify the usage of Huge Pages by checking whether the number of free Huge Pages has decreased: 
+$ grep HugePages_Free /proc/meminfo
+
+To free the Huge Pages pool, you can execute: 
+# echo 0 > /proc/sys/vm/nr_hugepages
+This command usually takes a while to finish. 
+
+
+Huge Pages and Shared Memory Filesystem in RHEL 3/4
+
+In the following example I will show that the Huge Pages pool is not being used by the ramfs shared memory filesystems. The ramfs shared memory filesystems can be used for Configuring Very Large Memory (VLM). 
+
+The ipcs command shows only System V shared memory segments. It does not display shared memory of a shared memory filesystems. The following command shows System V shared memory segments on a node running a database with an SGA of 2.6 GB: 
+# ipcs -m
+
+------ Shared Memory Segments -------- 
+key        shmid      owner      perms      bytes      nattch     status 
+0x98ab8248 1081344    oracle    600        77594624   0 
+0xe2e331e4 1245185    oracle    600        2736783360 0 
+
+The first shared memory segment of 74 MB was created by the ASM instance. The second shared memory segment of 2.6 GB was created by the database instance. 
+
+On this database system the size of the database buffer cache is 2 GB: 
+  db_block_buffers = 262144 
+  db_block_size    = 8192
+
+The following command shows that Oracle allocated a shared memory file of 2GB (262144*8192=2147483648) for the buffer cache on the ramfs shared memory filesystem: 
+# mount | grep ramfs
+ramfs on /dev/shm type ramfs (rw) 
+# ls -al /dev/shm
+total 204 
+drwxr-xr-x    1 oracle   dba             0 Oct 30 16:00 . 
+drwxr-xr-x   22 root     root       204800 Oct 30 16:00 .. 
+-rw-r-----    1 oracle   dba      2147483648 Nov  1 16:46 ora_orcl1_1277954 
+
+
+The next command shows how many Huge Pages are currently being used on this system: 
+$ grep Huge /proc/meminfo
+        HugePages_Total:  1536 
+        HugePages_Free:    194 
+        Hugepagesize:     2048 kB 
+$
+The output shows that 1342 (1536-194) Huge Pages are being used. This translates into 2814377984 (1342*2048*1024) bytes being allocated in the Huge Pages pool. This number matches the size of both shared memory segments (2736783360+77594624=2814377984) displayed by the ipcs command above. 
+
+This shows that the Huge Pages pool is not being used for the ramfs shared memory filesystem. Hence, you do not need to increase the Huge Pages pool if you use the ramfs shared memory filesystem. 
+
+
+
+Growing the Oracle SGA to 2.7 GB in x86 RHEL 2.1 Without VLM
+General 
+
+Due to 32-bit virtual address limitations workarounds have been implemented in Linux to increase the maximum size for shared memories. A workaround is to lower the Mapped Base Address (mapped_base) for shared libraries and the SGA Attach Address for shared memory segments. Lowering the Mapped Base Address and the SGA Attach Address allows SGA sizes of about 2.7 GB. By default, the shared memory segment size can only be increased to approximately 1.7 GB in RHEL 2.1. 
+
+To better understand the process of lowering Mapped Base Address for shared libraries and the SGA Attach Address for shared memory segments, an understanding of the Linux memory layout is necessary. 
+
+
+Linux Memory Layout 
+
+The 4 GB address space in 32-bit x86 Linux is usually split into different sections for every process on the system: 
+  0GB-1GB  User space   - Used for text/code and brk/sbrk allocations (malloc uses brk for small chunks)
+  1GB-3GB  User space   - Used for shared libraries, shared memory, and stack; shared memory and malloc use mmap (malloc uses mmap for large chunks)
+  3GB-4GB  Kernel Space - Used for the kernel itself
+
+In older Linux systems the split between brk(2) and mmap(2) was changed by setting the kernel parameter TASK_UNMAPPED_BASE and by recompiling the kernel. However, on all RHEL systems this parameter can be changed dynamically as will be shown later. 
+The mmaps grow bottom up from 1GB and the stack grows top down from around 3GB. 
+The split between userspace and kernelspace is set by the kernel parameter PAGE_OFFSET which is usually 0xc0000000 (3GB). 
+
+By default, in RHEL 2.1 the address space between 0x40000000 (1 GB) and 0xc0000000 (3 GB) is available for mapping shared libraries and shared memory segments. The default mapped base for loading shared libraries is 0x40000000 (1 GB) and the SGA attach address for shared memory segments is above the shared libraries. In Oracle 9i on RHEL 2.1 the default SGA attach address for shared memory is 0x50000000 (1.25 GB) where the SGA is mapped. This leaves 0.25 GB space for loading shared libraries between 0x40000000 (1 GB) and 0x50000000 (1.25 GB). 
+
+The address mappings of processes can be checked by viewing the proc file /proc/<pid>/maps where pid stands for the process ID. Here is an example of a default address mapping of an Oracle 9i process in RHEL 2.1: 
+08048000-0ab11000 r-xp 00000000 08:09 273078     /ora/product/9.2.0/bin/oracle
+0ab11000-0ab99000 rw-p 02ac8000 08:09 273078     /ora/product/9.2.0/bin/oracle
+0ab99000-0ad39000 rwxp 00000000 00:00 0
+40000000-40016000 r-xp 00000000 08:01 16         /lib/ld-2.2.4.so
+40016000-40017000 rw-p 00015000 08:01 16         /lib/ld-2.2.4.so
+40017000-40018000 rw-p 00000000 00:00 0
+40018000-40019000 r-xp 00000000 08:09 17935      /ora/product/9.2.0/lib/libodmd9.so
+40019000-4001a000 rw-p 00000000 08:09 17935      /ora/product/9.2.0/lib/libodmd9.so
+4001a000-4001c000 r-xp 00000000 08:09 16066      /ora/product/9.2.0/lib/libskgxp9.so
+...
+42606000-42607000 rw-p 00009000 08:01 50         /lib/libnss_files-2.2.4.so
+50000000-50400000 rw-s 00000000 00:04 163842     /SYSV00000000 (deleted)
+51000000-53000000 rw-s 00000000 00:04 196611     /SYSV00000000 (deleted)
+53000000-55000000 rw-s 00000000 00:04 229380     /SYSV00000000 (deleted)
+...
+bfffb000-c0000000 rwxp ffffc000 00:00 0
+
+
+As this address mapping shows, shared libraries start at 0x40000000 (1 GB) and System V shared memory, in this case SGA, starts at 0x50000000 (1.25 GB). Here is a summary of all the entries: 
+
+The text (code) section is mapped at 0x08048000: 
+  08048000-0ab11000 r-xp 00000000 08:09 273078     /ora/product/9.2.0/bin/oracle
+
+The data section is mapped at 0x0ab11000: 
+  0ab11000-0ab99000 rw-p 02ac8000 08:09 273078     /ora/product/9.2.0/bin/oracle
+
+The uninitialized data segment .bss is allocated at 0x0ab99000: 
+  0ab99000-0ad39000 rwxp 00000000 00:00 0
+
+The base address for shared libraries is 0x40000000: 
+  40000000-40016000 r-xp 00000000 08:01 16         /lib/ld-2.2.4.so
+
+The base address for System V shared memory, in this case SGA, is 0x50000000: 
+  50000000-50400000 rw-s 00000000 00:04 163842     /SYSV00000000 (deleted)
+
+The stack is allocated at 0xbfffb000: 
+  bfffb000-c0000000 rwxp ffffc000 00:00 0
+
+
+
+Increasing Space for the SGA in RHEL 2.1 
+
+To increase the maximum default size of shared memory for the SGA from 1.7 GB to 2.7GB, the Mapped Base Address (mapped_base) for shared libraries must be lowered from 0x40000000 (1 GB) to 0x10000000 (0.25 GB) and the SGA Attach Address for shared memory segments must be lowered from 0x50000000 (1.25 GB) to 0x15000000 (336 MB). Lowering the SGA attach address increases the available space for shared memory almost 1 GB. If shared memory starts at 0x15000000 (336 MB), then the space between 0x15000000 (336 MB) and 0xc0000000 (3GB) minus stack size becomes available for the SGA. Note the mapped base for shared libraries should not be above the SGA attach address, i.e. between 0x15000000 (336 MB) and 0xc0000000 (3GB). 
+
+To increase the space for shared memory in RHEL 2.1, the mapped base for shared libraries for the Oracle processes must be changed by root. And the oracle user must relink Oracle to relocate or lower the SGA attach address for shared memory segments. 
+
+
+Lowering the Mapped Base Address for Shared Libraries in RHEL 2.1 
+
+The default mapped base address for shared libraries in RHEL 2.1 is 0x40000000 (1 GB). To lower the mapped base for a Linux process, the file /proc/<pid>/mapped_base must be changed where <pid> stands for the process ID. This means that his is not a system wide parameter. In order to change the mapped base for Oracle processes, the address mapping of the parent shell terminal session that spawns Oracle processes (instance) must be changed for the child processes to inherit the new mapping. 
+
+Login as oracle and run the following command to obtain the process ID of the shell where sqlplus will later be executed: 
+$ echo $$
+Login as root in another shell terminal session and change the mapped_base for this process ID to 0x10000000 (decimal 268435456): 
+# echo 268435456 > /proc/<pid>/mapped_base
+Now when Oracle processes are started with sqlplus in this shell, they will inherit the new mapping. But before Oracle can be started, the SGA Attach Address for shared memory must be lowered as well. 
+
+
+Lowering the SGA Attach Address for Shared Memory Segments in Oracle 9i 
+
+The default SGA attach address for shared memory segments in Oracle 9i on RHEL 2.1 is 0x50000000 (1.25 GB). To lower the SGA attach address for shared memory, the Oracle utility genksms must be used before the relinking: 
+
+Login as oracle and execute the following commands: 
+# shutdown Oracle
+SQL> shutdown
+
+cd $ORACLE_HOME/rdbms/lib
+
+# Make a backup of the ksms.s file if it exists
+[[ ! -f ksms.s_orig ]] && cp ksms.s ksms.s_orig
+
+# Modify the SGA attach address in the ksms.s file before relinking Oracle
+genksms -s 0x15000000 > ksms.s
+
+
+Rebuild the Oracle executable by entering the following commands: 
+# Create a new ksms object file
+make -f ins_rdbms.mk ksms.o
+
+# Create a new "oracle" executable ($ORACLE_HOME/bin/oracle):
+make -f ins_rdbms.mk ioracle
+
+# The last step creates a new Oracle binary in $ORACLE_HOME/bin 
+# that loads the SGA at the address specified by sgabeg in ksms.s:
+#   .set   sgabeg,0X15000000
+
+
+Now when Oracle is started in the shell terminal session for which the mapped_base for shared libraries was changed at Lowering the Mapped Base Address for Shared Libraries in RHEL 2.1, the SGA attach address for Oracle's shared memory segments and hence SGA can be displayed with the following commands: 
+# Get pid of e.g. the Oracle checkpoint process
+$ /sbin/pidof ora_dbw0_$ORACLE_SID
+13519
+$ grep '.so' /proc/13519/maps |head -1
+10000000-10016000 r-xp 00000000 03:02 750738     /lib/ld-2.2.4.so
+$ grep 'SYS' /proc/13519/maps |head -1
+15000000-24000000 rw-s 00000000 00:04 262150     /SYSV3ecee0b0 (deleted)
+$
+
+The SGA size can now be increased to approximately 2.7 GB. If you create the SGA larger than 2.65 GB, then I would test the database very thoroughly to ensure no memory allocation problems arise. 
+
+
+Allowing the Oracle User to Change the Mapped Base Address for Shared Libraries 
+
+As shown at Lowering the Mapped Base Address for Shared Libraries in RHEL 2.1 only root can change the mapped_base for shared libraries. Using sudo we can give the "oracle" user the privilege to change the mapped base for shared libraries for the shell terminal session without providing full root access to the system. 
+
+Here is the procedure: 
+
+Create a script called "/usr/local/bin/ChangeMappedBase" which changes the mapped_base for shared libraries for for its own shell: 
+# cat /usr/local/bin/ChangeMappedBase
+#/bin/sh
+echo 268435456 > /proc/$PPID/mapped_base
+
+Make the script executable: 
+# chown root.root /usr/local/bin/ChangeMappedBase
+# chmod 755 /usr/local/bin/ChangeMappedBase
+
+Allow the oracle user to execute /usr/local/bin/ChangeMappedBase via sudo without password: 
+# echo "oracle   ALL=NOPASSWD: /usr/local/bin/ChangeMappedBase" >> /etc/sudoers
+
+Now the Oracle user can run /usr/local/bin/ChangeMappedBase to change the mapped_base for its own shell: 
+$ su - oracle
+$ cat /proc/$$/mapped_base; echo
+1073741824
+$ sudo /usr/local/bin/ChangeMappedBase
+$ cat /proc/$$/mapped_base; echo
+268435456
+$
+
+To change the mapping for shared libraries automatically during Oracle logins, execute: 
+# echo "sudo /usr/local/bin/ChangeMappedBase" >> ~/.bash_profile
+
+Now login as oracle: 
+$ ssh oracle@localhost
+oracle@localhost's password:
+Last login: Sun Jan  7 13:59:22 2003 from localhost
+$ cat /proc/$$/mapped_base; echo
+268435456
+$
+
+Note: 
+
+If the mapped base address for shared libraries for the Oracle processes was changed, then every Linux shell that spawns Oracle processes (e.g. listener, sqlplus, etc.) must have the same mapped base address as well. For example, if you execute sqlplus to connect to the local database, then you will get the following error message if the mapped_base for this shell is not the same as for the running Oracle processes: 
+SQL> connect scott/tiger
+ERROR:
+ORA-01034: ORACLE not available
+ORA-27102: out of memory
+Linux Error: 12: Cannot allocate memory
+Additional information: 1
+Additional information: 491524
+
+SQL>
+
+
+
+Growing the Oracle SGA to 2.7/3.42 GB in x86 RHEL 3/4 Without VLM
+General 
+
+Due to 32-bit virtual address limitations workarounds have been implemented in Linux to increase the maximum size for shared memories. A workaround is to lower the Mapped Base Address for shared libraries and the SGA Attach Address for shared memory segments. This enables Oracle to attain an SGA larger than 1.7 GB. To get a better understanding of address mappings in Linux and what Mapped Base Address is, see Linux Memory Layout. 
+
+The following example shows how to increase the size of the SGA without a shared memory filesystem. A shared memory filesystem must be used on x86 to increase SGA beyond 3.42 GB, see Configuring Very Large Memory (VLM). 
+
+
+Mapped Base Address for Shared Libraries in RHEL 3 and RHEL 4 
+
+In RHEL 3/4 the mapped base for shared libraries does not need to be lowered since this operation is now done automatically. 
+
+To verify the mapped base (mapped_base) for shared libraries execute "cat /proc/self/maps" in a shell. The directory "self" in the proc filesytem always points to the current running process which in this example is the cat process: 
+
+# cat /etc/redhat-release
+Red Hat Enterprise Linux AS release 3 (Taroon Update 6)
+# cat /proc/self/maps
+00a23000-00a38000 r-xp 00000000 08:09 14930      /lib/ld-2.3.2.so
+00a38000-00a39000 rw-p 00015000 08:09 14930      /lib/ld-2.3.2.so
+00b33000-00c66000 r-xp 00000000 08:09 69576      /lib/tls/libc-2.3.2.so
+00c66000-00c69000 rw-p 00132000 08:09 69576      /lib/tls/libc-2.3.2.so
+00c69000-00c6c000 rw-p 00000000 00:00 0
+00ee5000-00ee6000 r-xp 00000000 08:09 32532      /etc/libcwait.so
+00ee6000-00ee7000 rw-p 00000000 08:09 32532      /etc/libcwait.so
+08048000-0804c000 r-xp 00000000 08:09 49318      /bin/cat
+0804c000-0804d000 rw-p 00003000 08:09 49318      /bin/cat
+099db000-099fc000 rw-p 00000000 00:00 0
+b73e7000-b75e7000 r--p 00000000 08:02 313698     /usr/lib/locale/locale-archive
+b75e7000-b75e8000 rw-p 00000000 00:00 0
+bfff8000-c0000000 rw-p ffffc000 00:00 0
+#
+
+# cat /etc/redhat-release
+Red Hat Enterprise Linux AS release 4 (Nahant Update 2)
+# cat /proc/self/maps
+00b68000-00b7d000 r-xp 00000000 03:45 1873128    /lib/ld-2.3.4.so
+00b7d000-00b7e000 r--p 00015000 03:45 1873128    /lib/ld-2.3.4.so
+00b7e000-00b7f000 rw-p 00016000 03:45 1873128    /lib/ld-2.3.4.so
+00b81000-00ca5000 r-xp 00000000 03:45 1938273    /lib/tls/libc-2.3.4.so
+00ca5000-00ca6000 r--p 00124000 03:45 1938273    /lib/tls/libc-2.3.4.so
+00ca6000-00ca9000 rw-p 00125000 03:45 1938273    /lib/tls/libc-2.3.4.so
+00ca9000-00cab000 rw-p 00ca9000 00:00 0
+08048000-0804c000 r-xp 00000000 03:45 1531117    /bin/cat
+0804c000-0804d000 rw-p 00003000 03:45 1531117    /bin/cat
+08fa0000-08fc1000 rw-p 08fa0000 00:00 0
+b7df9000-b7ff9000 r--p 00000000 03:45 68493      /usr/lib/locale/locale-archive
+b7ff9000-b7ffa000 rw-p b7ff9000 00:00 0
+bffa6000-c0000000 rw-p bffa6000 00:00 0
+ffffe000-fffff000 ---p 00000000 00:00 0
+#
+
+The outputs show that the mapped base is already very low in RHEL 3 and RHEL 4. In the above example shared libraries start at 0xa38000 (decimal 10715136) in RHEL 3 and 0xb68000 (decimal 11960320) in RHEL 4. This is much lower than 0x40000000 (decimal 1073741824) in RHEL 2.1: 
+# cat /etc/redhat-release
+Red Hat Linux Advanced Server release 2.1AS (Pensacola)
+# cat /proc/self/maps
+08048000-0804c000 r-xp 00000000 08:08 44885      /bin/cat
+0804c000-0804d000 rw-p 00003000 08:08 44885      /bin/cat
+0804d000-0804f000 rwxp 00000000 00:00 0
+40000000-40016000 r-xp 00000000 08:08 44751      /lib/ld-2.2.4.so
+40016000-40017000 rw-p 00015000 08:08 44751      /lib/ld-2.2.4.so
+40017000-40018000 rw-p 00000000 00:00 0
+40022000-40155000 r-xp 00000000 08:08 47419      /lib/i686/libc-2.2.4.so
+40155000-4015a000 rw-p 00132000 08:08 47419      /lib/i686/libc-2.2.4.so
+4015a000-4015f000 rw-p 00000000 00:00 0
+bffea000-bffee000 rwxp ffffd000 00:00 0
+#
+
+The above mappings show that the Mapped Base Address does not have to be lowered in RHEL 3/4 to gain more SGA space. 
+
+
+Oracle 10g SGA Sizes in RHEL 3 and RHEL 4 
+
+The following table shows how large the Oracle 10g SGA can be configured in RHEL 3/4 without using a shared memory filesystem. Shared memory filesystems for the SGA are covered at Configuring Very Large Memory (VLM). 
+
+RHEL 3/4 Kernel 10g DB Version Default Supported SGA
+without VLM Max Supported SGA
+without VLM Comments 
+smp kernel (x86) 10g Release 1 Up to 1.7 GB Up to 2.7 GB 10g R1 must be relinked to increase the SGA size to approx 2.7 GB 
+hugemem kernel (x86) 10g Release 1 Up to 2.7 GB Up to 3.42 GB 10g R1 must be relinked to increase the SGA size to approx 3.42 GB 
+smp kernel (x86) 10g Release 2 Up to ~2.2 GB (*) Up to ~2.2 GB (*) No relink of 10g R2 is necessary but the SGA Attach Address is a little bit higher than in R1 
+hugemem kernel (x86) 10g Release 2 Up to ~3.3 GB (*) Up to ~3.3 GB (*) No relink of 10g R2 is necessary but the SGA Attach Address is a little bit higher than in R1 
+
+In Oracle 10g R2 the SGA size can be increased to approximately 2.7 GB using the smp kernel and to approximately 3.42 GB using the hugemem kernel. The SGA attach address does not have to be changed for that. To accommodate the same SGA sizes in Oracle 10g R1, the SGA Attach Address must be lowered. 
+
+(*) In my tests I was not able to bring up a 10g R2 database when sga_target was larger than 2350000000 bytes on a smp kernel and when sga_target was larger than 3550000000 bytes on a hugemem kernel. 
+
+NOTE: Lowering the SGA attach address in Oracle restricts the remaining 32-bit address space for Oracle processes. This means that less address space will be available for e.g. PGA memory. If the application uses a lot of PGA memory, then PGA allocations could fail even if there is sufficient free physical memory. Therefore, it may be prudent to avoid changing the SGA Attach Address for increasing the SGA size and use Very Large Memory (VLM) instead. Also, if the SGA size is less than 4GB, then the Very Large Memory (VLM) solution should be considered instead of going with the hugemem kernel unless the system has lots of physical memory. The hugemem kernel is not recommended on systems with less than 8GB of RAM due to some overhead issues in the kernel, see also 32-bit Architecture. If larger SGA sizes are needed than listed in the above table, then Very Large Memory (VLM) must obviously be used on x86 platforms. 
+
+
+Lowering the SGA Attach Address in Oracle 10g 
+
+Starting with Oracle 10g R2 the SGA attach address does not have to be lowered for creating larger SGAs. However, Oracle 10g R1 must be relinked for larger SGAs. 
+
+The following commands were executed on a 10g R1 database system: 
+# ps -ef | grep "[o]ra_ckpt"
+oracle    3035     1  0 23:21 ?        00:00:00 ora_ckpt_orcl
+# cat /proc/3035/maps | grep SYSV
+50000000-aa200000 rw-s 00000000 00:04 262144     /SYSV8b1d1510 (deleted)
+#
+
+The following commands were executed on a 10g R2 database system: 
+# ps -ef | grep "[o]ra_ckpt"
+oracle    4998     1  0 22:29 ?        00:00:00 ora_ckpt_orcl
+# cat /proc/4998/maps | grep SYSV
+20000000-f4200000 rw-s 00000000 00:04 4390912    /SYSV950d1f70 (deleted)
+#
+
+The output shows that the SGA attach address in 10g R2 is already lowered to 0x20000000 vs. 0x50000000 in 10g R1. This means that Oracle 10g R2 does not have to be relinked for creating larger SGAs. For 10g R1 the SGA attach address must be lowered from 0x50000000 to e.g. 0xe000000. You could also set it a little bit higher like 0x20000000 as its done by default in 10g Release 2. 
+
+The following example shows how to lower the SGA attach address to 0xe000000 in 10g R1 (see also Metalink Note:329378.1): 
+su - oracle
+cd $ORACLE_HOME/rdbms/lib
+[[ ! -f ksms.s_orig ]] && cp ksms.s ksms.s_orig
+genksms -s 0Xe000000 > ksms.s
+make -f ins_rdbms.mk ksms.o
+make -f ins_rdbms.mk ioracle
+
+For a detailed description of these commands, see Lowering the SGA Attach Address for Shared Memory Segments in Oracle 9i. 
+
+You can verify the new lowered SGA attach address by running the following command: 
+$ objdump -t $ORACLE_HOME/bin/oracle |grep sgabeg
+0e000000 l       *ABS*  00000000              sgabeg
+$
+
+Now when 10g R1 is restarted the SGA attach address should be at 0xe000000: 
+# ps -ef | grep "[o]ra_ckpt"
+oracle    4998     1  0 22:29 ?        00:00:00 ora_ckpt_orcl
+# cat /proc/4998/maps | grep SYSV
+0e000000-c1200000 rw-s 00000000 00:04 0          /SYSV8b1d1510 (deleted)
+#
+
+Now you should be able to create larger SGAs. 
+
+NOTE: If you increase the size of the SGA, essentially using more process address space for the SGA, then less address space will be available for PGA memory. This means that if your application uses a lot of PGA memory, PGA allocations could fail even if you have sufficient RAM. In this case, you need to set the SGA attach address to a higher value which will lower the SGA size. 
+
+
+
+Using Very Large Memory (VLM)
+General 
+
+Starting with Oracle9i Release 2 the SGA can theoretically be increased to about 62 GB (depending on block size) on a 32-bit system with 64 GB RAM. A processor feature called Page Address Extension (PAE) provides the capability of physically addressing 64 GB of RAM. However, it does not enable a process or program to address more than 4GB directly or have a virtual address space larger than 4GB. Hence, a process cannot attach to shared memory directly if it has a size of 4GB or more. To address this issue, a shared memory filesystem (memory-based filesystem) can be created which can be as large as the maximum allowable virtual memory supported by the kernel. With a shared memory filesystem processes can dynamically attach to regions of the filesystem allowing applications like Oracle to have virtually a much larger shared memory on 32-bit systems. This is not an issue on 64-bit systems. 
+
+For Oracle to use a shared memory filesystem, a feature called Very Large Memory (VLM) must be enabled. VLM moves the database buffer cache part of the SGA from the System V shared memory to the shared memory filesystem. It is still considered one large SGA but it consists now of two different OS shared memory entities. It is noteworthy to say that VLM uses 512MB of the non-buffer cache SGA to manage VLM. This memory area is needed for mapping the indirect data buffers (shared memory filesystem buffers) into the process address space since a process cannot attach to more than 4GB directly on a 32-bit system. For example, if the non-buffer cache SGA is 2.5 GB, then you will only have 2 GB of non-buffer cache SGA for shared pool, large pool, and redo log buffer since 512MB is used for managing VLM. If the buffer cache is less than 512 MB, then the init.ora parameter VLM_WINDOW_SIZE must be changed to reflect the size of the database buffer cache. However, it is not recommended to use VLM if db_block_buffers is not greater than 512MB. 
+
+In RHEL 3 and RHEL 4 there are two different memory filesystems that can be used for VLM:
+- shmfs/tmpfs:  This memory filesystem is pageable/swappable. And to my knowledge it cannot be backed by Huge Pages because Huge Pages are not swappable.
+- ramfs:  This memory filesystems is not pageable/swappable and not backed by Huge Pages, see also Huge Pages and Shared Memory Filesystem in RHEL 3/4. 
+
+Note the shmfs filesystem is available in RHEL 3 but not in RHEL 4: 
+$ cat /etc/redhat-release
+Red Hat Enterprise Linux AS release 3 (Taroon Update 6) 
+$ egrep "shm|tmpfs|ramfs" /proc/filesystems
+nodev   tmpfs 
+nodev   shm 
+nodev   ramfs 
+$
+
+$ cat /etc/redhat-release
+Red Hat Enterprise Linux AS release 4 (Nahant Update 2)
+$ egrep "shm|tmpfs|ramfs" /proc/filesystems
+nodev   tmpfs
+nodev   ramfs
+$
+
+This means that if you try to mount a shmfs filesystem in RHEL 4, you will get the following error message: 
+mount: fs type shm not supported by kernel
+The difference between shmfs and tmpfs is you don't need to specify the size of the filesystem if you mount a tmpfs filesystem. 
+
+
+Configuring Very Large Memory (VLM) 
+
+The following example shows how to use the RAM disk ramfs to allocate 8 GB of shared memory for the 10g database buffer cache on a 32-bit RHEL 3/4 systems (hugemem kernel). If this setup is performed on a server that does not have enough RAM, then Linux will appear to hang and the kernel will automatically start killing processes due to memory shortage (ramfs is not swappable). Furthermore, ramfs is not backed by Huge Pages and therefore the Huge Pages pool should not be increased for database buffers, see Huge Pages and Shared Memory Filesystem in RHEL 3/4. In fact, if there are too many Huge Pages allocated, then there may not be enough memory for ramfs. 
+
+Since ramfs is not swappable, it is by default only usable by root. If you put too much on a ramfs filesystem, you can easily hang the system. To mount the ramfs filesystem and to make it usable for the Oracle account, execute: 
+# umount /dev/shm 
+# mount -t ramfs ramfs /dev/shm 
+# chown oracle:dba /dev/shm
+
+When Oracle starts it will create a file in the /dev/shm directory that corresponds to the extended buffer cache. Ensure to add the above lines to /etc/rc.local. If ointall is the primary group of the Oracle account, use chown oracle:oinstall /dev/shm instead. For security reasons you do not want to give anyone write access to the shared memory filesystem. Having write access to the ramfs filesystem allows you to allocate and pin a large chunk of memory in RAM. In fact, you can kill a machine by allocating too much memory in the ramfs filesystem. 
+
+To enable VLM, set the Oracle parameter use_indirect_data_buffers to true: 
+use_indirect_data_buffers=true
+
+
+For 10g R1 and R2 databases it's important to convert DB_CACHE_SIZE and DB_xK_CACHE_SIZE parameters to DB_BLOCK_BUFFERS, and to remove SGA_TARGET if set. Otherwise you will get errors like these: 
+ORA-00385: cannot enable Very Large Memory with new buffer cache parameters
+
+
+Here is an example for configuring a 8 GB buffer cache for a 10g R2 database with RHEL 3/4 hugemem kernels: 
+use_indirect_data_buffers=true 
+db_block_size=8192 
+db_block_buffers=1048576 
+shared_pool_size=2831155200
+
+Note that shmmax needs to be increased for shared_pool_size to fit into the System V shared memory. In fact, it should be slightly larger than the SGA size. Since shared_pool_size is less than 3 GB in this example, shmmax doesn't need to be larger than 3GB. The 8 GB indirect buffer cache will be in the RAM disk and hence it doesn't have to be accounted for in shmmax. On a 32-bit system the shmmax kernel paramter cannot be larger than 4GB, see also Setting SHMMAX Parameter. 
+
+In order to allow oracle processes to lock more memory into its address space for the VLM window size, the ulimit parameter memlock must be changed for oracle. 
+Ensure to set memlock in /etc/security/limits.conf to 3145728: 
+oracle           soft    memlock         3145728
+oracle           hard    memlock         3145728
+
+Login as Oracle again and check max locked memory limit: 
+$ ulimit -l
+3145728
+
+If it's not working after a ssh login, then you may have to set the SSH parameter UsePrivilegeSeparation, see Setting Shell Limits for the Oracle User. 
+
+If memlock is not set or too small, you will get error messages similar to this one: 
+ORA-27103: internal error
+Linux Error: 11: Resource temporarily unavailable
+
+
+Now try to start the database. Note the database startup can take a while. Also, the sqlplus banner or show sga may not accurately reflect the actual SGA size in older Oracle versions. 
+
+The 8GB file for the database buffer cache can be seen in the ramfs shared memory filesystem: 
+$ ls -al /dev/shm
+total 120 
+drwxr-xr-x    1 oracle   dba             0 Nov 20 16:29 . 
+drwxr-xr-x   22 root     root       118784 Nov 20 16:25 .. 
+-rw-r-----    1 oracle   dba      8589934592 Nov 20 16:30 ora_orcl_458754 
+$
+
+
+If the shared pool size is configured too large, you will get error messages similar to this one: 
+ORA-27103: internal error
+Linux Error: 12: Cannot allocate memory
+
+
+
+Measuring I/O Performance on Linux for Oracle Databases
+General 
+
+Oracle provides now a tool called Orion which simulates Oracle workloads without having to install Oracle or create a database. It uses Oracle's I/O software stack to perform various test scenarios to predict performance of Oracle databases. Orion can also simulate ASM striping. So it's a great tool for testing and optimizing Linux for Oracle databases. But note that at the time of this writing Orion is available on x86 Linux only and it's still in beta and not supported by Oracle. For more information on Orion, see Oracle ORION. 
+
+
+Using Orion 
+
+WARNING: Running write tests with the Orion tool will wipe out all data on the disks where tests are performed. 
+
+In the following example I will use Orion to measure the performance of small random reads at different loads and then (separately) large random reads at different loads. 
+
+
+Before running any tests, verify the speed of the Host Bus Adapters (HBA) if you use SAN attached storage. 
+
+For Emulex Fibre Channel adapters in RHEL 3, execute: 
+# grep speed /proc/scsi/lpfc/*
+
+For QLogic Fibre Channel adapters in RHEL 3, execute: 
+# grep "data rate" /proc/scsi/qla*/*
+
+
+Go to Oracle ORION downloads to download the Orion tool. The downloadable file is in a compressed format that contains a single binary that simulates the workloads. To uncompress the file and make it executable, run: 
+# gunzip orion10.2_linux.gz
+# chmod 755 orion10.2_linux
+
+Make sure the libaio RPM is installed on the system to avoid the following error: 
+
+# ./orion10.2_linux
+./orion10.2_linux: error while loading shared libraries: libaio.so.1: cannot open shared object file: No such file or directory
+#
+
+Next create a file that lists the raw volumes or files that should be tested by Orion. For example, if the name of the test run is "test1", then the file name should be test1.lun: 
+
+# cat test1.lun
+/dev/raw/raw1
+#
+
+Now to run a "simple" test to measure the performance of small random reads at different loads and then (separately) large random reads at different loads, execute: 
+# ./orion10.2_linux -run simple -testname test1 -num_disks 1
+
+The option "-run simple" specifies to run a "simple" test which measures the performance of small random reads at different loads and then (separately) large random reads at different loads. 
+The option "-testname test" specifies the name of the test run. This means that test.lun must contain a list of raw volumes or files to be tested. And the results of the test will be recorded in files that start with suffix "test". 
+The option "-num_disks 1" specifies that I have only one raw volume or file listed in the test.lun file. 
+
+
+A test run creates several output files. The summary file contains information like MBPS, IOPS, latency, etc. Here is the list of files of my "test1" test run: 
+# ls test1*
+test1_iops.csv  test1_lat.csv  test1.lun  test1_mbps.csv  test1_summary.txt  test1_trace.txt
+
+For more information on Orion and the output files, refer to Oracle ORION. 
+
+
+
+Appendix
+Here is a list of various Linux monitoring tools and statistics files: 
+
+Overall Tools: 
+top, vmstat, sar, ps, pstree, ipcs 
+
+CPU: 
+top, mpstat, tload, /proc/cpuinfo, x86info 
+
+Memory: 
+free, /proc/meminfo, slabtop, /proc/slabinfo, ipcs 
+
+I/O: 
+iostat, vmstat, sar 
+
+sar examples: 
+
+To display CPU utilization: 
+  sar 3 100
+To display paging activity: 
+  sar -B 3 100
+To display swapping activity: 
+  sar -W 3 100
+To display block I/O activity: 
+  sar -b 3 100
+To display block I/O activity for each block device: 
+  sar -d 3 100
+To display network activity: 
+  sar -n DEV 3 100
+
+
+
+References
+Oracle9i Database Release 2 (9.2) Documentation 
+Oracle Database 10g Release 1 (10.1) Documentation 
+Oracle Database 10g Release 2 (10.2) Documentation 
+Oracle Database 10g Linux Administration 
+Red Hat Enterprise Linux AS 4 Release Notes 
+Upgrading from Red Hat Enterprise Linux 2.1 AS To Red Hat Enterprise Linux 3 
+An Overview of Red Hat Advanced Server V2.1 Reliability, Availability, Scalability, and Manageability (RASM) Features 
+Linux Virtual Memory in Red Hat Advanced Server 2.1 and Oracle's Memory Usage Characteristics 
+Oracle9iR2 on Linux: Performance, Reliability and Manageability Enhancements on Red Hat Linux Advanced Server 2.1 
+Understanding Virtual Memory. 
+Understanding the Linux Kernel 
+High Memory In The Linux Kernel 
+Optimizing Linux I/O 
+Optimizing Kernel 2.6 and SLES9 for the best possible performance 
+Oracle MetaLink Note:200266.1
+Oracle MetaLink Note:225751.1
+Oracle MetaLink Note:249213.1
+Oracle MetaLink Note:260152.1
+Oracle MetaLink Note:262004.1
+Oracle MetaLink Note:265194.1
+Oracle MetaLink Note:270382.1
+Oracle MetaLink Note:280463.1
+Oracle MetaLink Note:329378.1
+Oracle MetaLink Note:344320.1
+
+
+
+Copyright © 2006 puschitz.com
+
+
+The information provided on this website comes without warranty of any kind and is distributed AS IS. Every effort has been made to provide the information as accurate as possible, but no warranty or fitness is implied. The information may be incomplete, may contain errors or may have become out of date. The use of this information described herein is your responsibility, and to use it in your own environments do so at your own risk. 
+
+

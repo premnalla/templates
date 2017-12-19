@@ -1,0 +1,27 @@
+Issue: 
+How do I increase the maximum number of open files on my system? Resolution:The current setting for maximum number of open files can be viewed with the command: 
+ulimit -n
+This number indicates the maximum number of files normal users (i.e. non-root) can have open in a single session. Note that for the root user, ulimit -n will sometimes output 1024 even after following the procedure to increase the maximum number of open files. This won't effect root's ability to open large numbers of files, as only normal users are bound by this value. 
+
+To increase the maximum number of open files beyond the default of 1024, two changes to the system may be necessary. In these examples, we will increase the maximum number of open files to the arbitrary value of 2048. All changes need to be made by the root user and users will need to log out and log back in before the changes will take effect. 
+Configure the system to accept the desired value for maximum number of open files Check the value in /proc/sys/fs/file-max to see if it is larger than the value needed for the maximum number of open files: 
+
+# cat /proc/sys/fs/file-max 
+
+If the value isn't large enough, echo an appropriate number into the variable and add the change to /etc/sysctl.conf to make it persistent across reboots. If the number is already larger than the value you wish to use, skip to step 2. 
+
+# echo 2048 > /proc/sys/fs/file-max 
+
+and edit /etc/sysctl.conf to include the line: 
+
+fs.file-max = 2048 
+
+
+Set the value for maximum number of open files In the file /etc/security/limits.conf, below the commented line that reads #<domain>      <type>  <item>         <value>add this line: 
+
+* - nofile 2048 
+
+This line sets the default number of open file descriptors for every user on the system to 2048. Note that the "nofile" item has two possible limit values under the <type> header: hard and soft. Both types of limits must be set before the change in the maximum number of open files will take effect. By using the "-" character, both hard and soft limits are set simultaneously. 
+
+The hard limit represents the maximum value a soft limit may have and the soft limit represents the limit being actively enforced on the system at that time. Hard limits can be lowered by normal users, but not raised and soft limits cannot be set higher than hard limits. Only root may raise hard limits. 
+When increasing file limit descriptors, you may want to simply double the value. For example, if you need to increase the default value of 1024, increase the value to 2048 first. If you need to increase it again, try 4096, etc. 

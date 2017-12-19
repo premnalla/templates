@@ -1,0 +1,42 @@
+Mikhail_Orlov 
+Posts:4 
+Registered: 8/14/06  Max number of file descriptors in 32 vs 64 bit compilation    
+Aug 14, 2006 11:29 AM 
+  
+
+  
+  Hi,
+
+I compiled a simple C app (with Solaris CC compiler) that attempts to open 10000 file descriptors using fopen(). It runs just fine when compile in 64-bit mode (with previously setting .ulimit .S -n 10000.). 
+However, when I compile it in 32-bit mode it fails to open more than 253 files. Call to system(.ulimit .a.) suggests that .nofiles (descriptors) 10000..
+
+Did anybody ever see similar problem before?
+
+Thanks in advance,
+Mikhail    
+ clamage45 
+Posts:1,615 
+Registered: 12/6/02  Re: Max number of file descriptors in 32 vs 64 bit compilation    
+Aug 14, 2006 12:10 PM (reply 1 of 2) 
+  
+
+  
+  On 32-bit Solaris, the stdio "FILE" struct stores the file descriptor (an integer) in an 8-bit field. WIth 3 files opened automatically at program start (stdin, stdout, stderr), that leaves 253 available file descriptors.
+
+This limitation stems from early versions of Unix and Solaris, and must be maintained to allow old binaries to continue to work. That is, the layout of the FILE struct is wired into old programs, and thus cannot be changed.
+
+When 64-bit Solaris was introduced, there was no compatibility issue, since there were no old 64-bit binaries . The limit of 256 file descriptors in stdio was removed by making the field larger. In addition, the layout of the FILE struct is hidden from user programs, so that future changes are possible, should become necessary.
+
+To work around the limit, you can play some games with dup() and closing the original descriptor to make it available for use with a new file, or you can arrange to have fewer than the max number of files open at one time.
+
+A new interface for stdio is being implemented to allow a large number of files to be open at one time. I don't know when it will be available or for which versions of Solaris.    
+ Mikhail_Orlov 
+Posts:4 
+Registered: 8/14/06  Re: Max number of file descriptors in 32 vs 64 bit compilation    
+Aug 14, 2006 12:24 PM (reply 2 of 2) 
+  
+
+  
+  Thank you.
+I just tried using open() instead of fopen() and it seems to solve the problem.  
+

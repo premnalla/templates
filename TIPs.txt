@@ -1,0 +1,689 @@
+
+RPM
+-----
+ERASING/DELETING a package: %> rpm -e <pkgname> 
+
+
+IP-Address Types (Address/Protocol Family types)
+AF_INET		2
+AF_INET6		10
+PF_INET		2
+PF_INET6		10
+
+SNMP values for address types from MIB
+IPv4 type		1
+IPv6 type		2
+
+
+Firewall settings
+--------------------
+./sysconfig/SuSEfirewall2
+./services
+
+Indenting C source file
+Formatting C soruce file
+-----------------------------
+indent [options] [input-files]
+indent [options] [single-input-file] [-o output-file]
+options:
+-br -ce -cdw -cdb -sc -bbb -lp -ip2 -nbbo
+
+Setuid a program (e.g. fping)
+---------------------------------
+build the application
+su - root
+...pw....
+cd to dir of application
+chown root application
+chmod ugo+s application
+exit
+./application
+
+
+UPS Setup on Linux
+----------------------
+/home/prem/HELP_OS/ups_setup.txt
+
+glibc
+-------
+How to find out the versio of glibc on my system.
+%> rpm -q glibc
+
+
+Bruno Preiss
+--------------
+opus4.zip
+programs.zip
+
+HELP directories
+-----------------
+~/HELP_ACE/...
+~/HELP_NetSNMP/...
+...
+
+
+NetSNMP
+------------
+man snmp_config
+man snmpd
+man snmpconf
+snmpd.conf
+snmp.conf
+man snmpcmd
+
+
+Generating and Receiving traps
+----------------------------------
+From one window:
+LINUX:/usr/sbin/snmptrapd -f
+
+From another window:
+LINUX:/usr/sbin/snmptrap -d -v 2c -c public localhost '' .1.3.6.1.1.1.3 .1.3.6.2.3.4.5.0 s "hello world"
+
+NetSNMP sending traps
+----------------------
+The SNMPv2 notification
+The format of the SNMPv2 notification is somewhat different. The definition in the MIB file looks as follows 
+
+NOTIFICATION-TEST-MIB DEFINITIONS ::= BEGIN
+        IMPORTS ucdavis FROM UCD-SNMP-MIB;
+
+demonotifs OBJECT IDENTIFIER ::= { ucdavis 991 }
+
+demo-notif NOTIFICATION-TYPE
+	STATUS current
+        OBJECTS { sysLocation }
+	DESCRIPTION "Just a test notification"
+        ::= { demonotifs 17 }
+
+END               
+This is a definition that is similar to the SNMPv1 trap given above. Issuing this notification looks as follows 
+
+% snmptrap -v 2c -c public localhost '' NOTIFICATION-TEST-MIB::demo-notif \
+	SNMPv2-MIB::sysLocation.0 s "just here"
+and the resulting output from the trap daemon is 
+
+1999-11-13 08:31:33 localhost [127.0.0.1]:
+        SNMPv2-MIB::sysUpTime.0 = Timeticks: (13917129) 1 day, 14:39:31.29
+        SNMPv2-MIB::snmpTrapOID.0 = OID: NOTIFICATION-TEST-MIB::demo-notif
+        SNMPv2-MIB::sysLocation.0 = "just here" 
+
+
+other examples:
+snmptrap -d -v 2c -c public localhost '' .1.3.6.1.1 .1.3.6.2.0 s "hello world" .1.3.6.3.0 s "foo"
+
+Daemon process - forking and closing STDERR, etc
+-------------------------------------------------
+        switch (fork()) {
+        case -1:
+            fprintf(stderr, "bad fork - %s\n", strerror(errno));
+            _exit(1);
+
+        case 0:
+            /*
+             * become process group leader
+             */
+            if (setsid() == -1) {
+                fprintf(stderr, "bad setsid - %s\n", strerror(errno));
+                _exit(1);
+            }
+
+            /*
+             * if we are forked, we don't want to print out to stdout or stderr
+             */
+            fd = open("/dev/null", O_RDWR);
+            dup2(fd, STDIN_FILENO);
+            dup2(fd, STDOUT_FILENO);
+            dup2(fd, STDERR_FILENO);
+            close(fd);
+
+        default:
+            _exit(0);
+        }
+
+Linux core files
+------------------
+http://aplawrence.com/Linux/limit_core_files.html
+If you don't want core files at all, set "ulimit -c 0" in your startup files. 
+That's the default on many systems; in /etc/profile you may find: 
+ulimit -S -c 0 > /dev/null 2>&1 
+If you DO want core files, you need to reset that in your own .bash_profile: 
+ulimit -c 50000 - would allow core files but limit them to 50,000 bytes. 
+ulimit -c unlimited
+ulimit -a
+
+Building and Linkig
+Shared library
+Static library
+------------------------------------
+Shared library required position independent code
+"-fPIC" compile option is required
+
+Static
+------
+gcc -c calc_mean.c -o calc_mean.o
+ar  rcs libmean.a      calc_mean.o
+gcc -static main.c -L. -lmean -o statically_linked
+
+g++ -c -fPIC foo.cpp -o foo.o
+g++ -c main.cpp -o main.o
+g++ -shared -Wl,-soname,libfoo.so.1 -o libfoo.so.1 foo.o
+ln -s libfoo.so.1 libfoo.so
+g++ -o foo -L. main.o -lfoo
+declare -x LD_LIBRARY_PATH="..."
+
+Shared
+------
+gcc -c -fPIC calc_mean.c -o calc_mean.o
+gcc -shared -Wl,-soname,libmean.so.1 -o libmean.so.1.0.1  calc_mean.o
+main.c -o dynamically_linked -L. -lmean
+
+Turning off a shell env variable
+----------------------------------
+declare +x foo
+
+Building ACE
+---------------
+Static Libraries: modify ~cvs/src/build_setup_common.bash
+Shared Libraries: modify ~cvs/src/build_setup_common.bash
+
+
+ACE code
+--------
+~/ACE_code.txt
+
+
+
+ACE Log
+--------
+ACE_LOG_MSG->priority_mask (0, ACE_Log_Msg::PROCESS);
+ACE_LOG_MSG->priority_mask (LM_DEBUG | LM_NOTICE,
+                            ACE_Log_Msg::THREAD);
+
+#define DEBUG_PREFIX       ACE_TEXT ("DEBUG%I")
+#define INFO_PREFIX        ACE_TEXT ("INFO%I")
+#define NOTICE_PREFIX      ACE_TEXT ("NOTICE%I")
+#define WARNING_PREFIX     ACE_TEXT ("WARNING%I")
+#define ERROR_PREFIX       ACE_TEXT ("ERROR%I")
+#define CRITICAL_PREFIX    ACE_TEXT ("CRITICAL%I")
+#define ALERT_PREFIX       ACE_TEXT ("ALERT%I")
+#define EMERGENCY_PREFIX   ACE_TEXT ("EMERGENCY%I")
+#define MY_DEBUG(FMT, ...)             ACE_DEBUG(( LM_DEBUG,                      DEBUG_PREFIX FMT                     __VA_ARGS__))
+#define MY_INFO(FMT, ...)             ACE_DEBUG(( LM_INFO,                      INFO_PREFIX FMT                     __VA_ARGS__))
+#define MY_NOTICE(FMT, ...)             ACE_DEBUG(( LM_NOTICE,                      NOTICE_PREFIX FMT                     __VA_ARGS__))
+#define MY_WARNING(FMT, ...)             ACE_DEBUG(( LM_WARNING,                      WARNING_PREFIX FMT                     __VA_ARGS__))
+#define MY_ERROR(FMT, ...)             ACE_DEBUG(( LM_ERROR,                      ERROR_PREFIX FMT                     __VA_ARGS__))
+#define MY_CRITICAL(FMT, ...)             ACE_DEBUG(( LM_CRITICAL,                      CRITICAL_PREFIX FMT                     __VA_ARGS__))
+#define MY_ALERT(FMT, ...)             ACE_DEBUG(( LM_ALERT,                      ALERT_PREFIX FMT                     __VA_ARGS__))
+#define MY_EMERGENCY(FMT, ...)             ACE_DEBUG(( LM_EMERGENCY,                      EMERGENCY_PREFIX FMT                     __VA_ARGS__))
+
+#define MY_DEBUG      LM_DEBUG,     ACE_TEXT ("DEBUG%I")
+#define MY_INFO       LM_INFO,      ACE_TEXT ("INFO%I")
+#define MY_NOTICE     LM_NOTICE,    ACE_TEXT ("NOTICE%I")
+#define MY_WARNING    LM_WARNING,   ACE_TEXT ("WARNING%I")
+#define MY_ERROR      LM_ERROR,     ACE_TEXT ("ERROR%I")
+#define MY_CRITICAL   LM_CRITICAL,  ACE_TEXT ("CRITICAL%I")
+#define MY_ALERT      LM_ALERT,     ACE_TEXT ("ALERT%I")
+#define MY_EMERGENCY  LM_EMERGENCY, ACE_TEXT ("EMERGENCY%I")
+
+
+
+Thread ID
+----------
+pthread_self()
+
+
+--------------------------------
+try {
+  axDbCmtsCounts & cmts = dynamic_cast<axDbCmtsCounts &> (absCounts);
+} catch (std::bad_cast & e) {
+}
+
+
+Mysql (Starting, stopping)
+-----------------------------
+stop: mysqladmin -u root -pmanager shutdown
+starting: su - 
+# /etc/init.d/rc2.d/S12mysql start
+
+Net SNMP ASN types
+------------------
+#define ASN_BOOLEAN         ((u_char)0x01)
+#define ASN_INTEGER         ((u_char)0x02)
+#define ASN_BIT_STR         ((u_char)0x03)
+#define ASN_OCTET_STR       ((u_char)0x04)
+#define ASN_NULL            ((u_char)0x05)
+#define ASN_OBJECT_ID       ((u_char)0x06)
+#define ASN_SEQUENCE        ((u_char)0x10)
+#define ASN_SET             ((u_char)0x11)
+
+#define ASN_UNIVERSAL       ((u_char)0x00)
+#define ASN_APPLICATION     ((u_char)0x40)
+#define ASN_CONTEXT         ((u_char)0x80)
+#define ASN_PRIVATE         ((u_char)0xC0)
+
+#define ASN_PRIMITIVE       ((u_char)0x00)
+#define ASN_CONSTRUCTOR     ((u_char)0x20)
+
+#define ASN_LONG_LEN        (0x80)
+#define ASN_EXTENSION_ID    (0x1F)
+#define ASN_BIT8            (0x80)
+
+OIDS
+----
+
+MTA OIDS
+---
+Descrip,    {OID:.1.3.6.1.2.1.1.1.0}{OID_TYPE:SCALAR};
+Up_time,    {OID:.1.3.6.1.2.1.1.8.0}{OID_TYPE:SCALAR};
+Sys_Obj_Id,    {OID:.1.3.6.1.2.1.1.2.0}{OID_TYPE:SCALAR};
+Provisioning_State,    {OID:.1.3.6.1.4.1.4491.2.2.1.1.1.9.0}{OID_TYPE:SCALAR};
+Provisioning_Counter,    {OID:.1.3.6.1.4.1.4491.2.2.1.1.1.12.0}{OID_TYPE:SCALAR};
+Config_File,    {OID:.1.3.6.1.4.1.4491.2.2.1.1.2.5.0}{OID_TYPE:SCALAR};
+Config_FQDN,    {OID:.1.3.6.1.4.1.4491.2.2.1.1.1.5.0}{OID_TYPE:SCALAR};
+Config_END_POINT_COUNT,    {OID:.1.3.6.1.4.1.4491.2.2.1.1.1.6.0}{OID_TYPE:SCALAR}
+
+Arris 202 Battery
+-----------------
+Battery_State_1,    {OID:.1.3.6.1.4.1.4115.10.2.6.0}{OID_TYPE:SCALAR};
+
+Arris 402 Battery
+-----------------
+Battery_State_1, {OID:.1.3.6.1.4.1.4115.1.3.3.1.3.5.3.1.2.1}{OID_TYPE:SCALAR};
+Battery_State_2, {OID:.1.3.6.1.4.1.4115.1.3.3.1.3.5.3.1.2.2}{OID_TYPE:SCALAR};
+
+CMTS CM Status table:
+---------------------
+MacAddress{OID: 1.3.6.1.2.1.10.127.1.3.3.1.2} {OID_TYPE:COLUMN}
+Status{OID:1.3.6.1.2.1.10.127.1.3.3.1.9} {OID_TYPE:COLUMN};
+US_Index{OID:1.3.6.1.2.1.10.127.1.3.3.1.5}{OID_TYPE:COLUMN};
+IpAddress{OID:1.3.6.1.2.1.10.127.1.3.3.1.3}{OID_TYPE:COLUMN};
+
+
+ifTable
+IF_DESCRIPTION{OID: 1.3.6.1.2.1.2.2.1.2}{OID_TYPE:COLUMN};
+IF_TYPE{OID: 1.3.6.1.2.1.2.2.1.3}{OID_TYPE:COLUMN};
+IF_INDEX{COLUMN_ELEMENT_INDEX: IF_DESCRIPTION};
+
+ifStackTable
+IF DOCSIS_20 capable AND ifType EQ 129 THEN
+IF NEXT_LOWER LAYER EQ 0 THEN
+it is Upstream
+END IF
+END IF
+(OID) 1.3.6.1.2.1.31.1.2.1.3. 
+ifMIB = 31
+ifMIBObjects = 31.1
+ifStackTable = 31.1.2
+ifStackTable = 31.1.2
+ifStackEntry = 31.1.2.1
+ifStackHigherLayer = 31.1.2.1.1
+ifStackLowerLayer = 31.1.2.1.2
+ifStackStatus = 31.1.2.1.3
+
+CMTS Up time
+1.3.6.1.2.1.1.3.0
+
+CMTS Descriptin
+1.3.6.1.2.1.1.1.0
+
+CMTS capability
+1.3.6.1.2.1.10.127.1.1.5
+
+SNMP log location
+----------------------
+/var/log/snmpd.log
+
+/* persistent storage location */
+/var/net-snmp
+
+---------------------------------------------------------
+            Net-SNMP configuration summary:
+---------------------------------------------------------
+
+  SNMP Versions Supported:    1 2c 3
+  Net-SNMP Version:           5.3.0.1
+  Building for:               linux
+  Network transport support:  Callback Unix TCP UDP TCPIPv6 UDPIPv6
+  SNMPv3 Security Modules:    usm
+  Agent MIB code:             mibII/vacm_vars utilities/execute mibII/ipv6
+  SNMP Perl modules:          disabled
+  Embedded perl support:      disabled
+  Authentication support:     MD5
+  Encryption support:
+
+
+CVS Import
+Initial import
+---------------
+cvs import -m "xxxxxxxxx xxxxxx xxxxxx" src network_data_syatems initial_0_0
+
+Example
+--------
+Assumptions:
+1. project base directory is "src"
+2. you have a new directory called "summary" at location "src/proj"
+What you do is the following:
+1. cd $HOME/workspace/src/proj/summary
+2. cvs import -m "Initial" src/proj/summary foo_bar_zoo initial_0_0
+This will import "summary" into location "src/proj" resulting in "src/proj/summary"
+Note: the above import command will import all sub-dirs of "summary" as well!
+
+Building openssl for the first time
+Configuring openssl for the first time
+Build openssl
+Configure openssl
+---------------------------------
+./config threads shared 
+
+
+ACE
+----
+ACE 5.4.7 had old build/makefiles structuer
+Old fashioned building instructions
+1. create setup_env.bash file with following contents
+declare -x ACE_ROOT=`pwd`
+declare -x LD_LIBRARY_PATH="$ACE_ROOT/ace:$ACE_ROOT/lib:$LD_LIBRARY_PATH"
+2. source setup_env.bash
+3. create ace/config.h with following contents
+#include "ace/config-<platform>.h"
+e.g. on linux
+#include "ace/config-linux.h
+4. create $ACE_ROOT/include/makeinclude/platform_macros.GNU with following contents
+include $(ACE_ROOT)/include/makeinclude/platform_linux.GNU
+5. cd $(ACE_ROOT)/ace
+   gmake
+
+
+ACE 5.5 has new build structure
+
+Building ACE for the first time
+Configuring ACE for the first time
+Build ACE
+Configure ACE
+---------------------------------
+cd ACE_wrappers/
+autoreconf -I m4 --install --force
+mkdir build
+cd build
+../configure --enable-ipv4-ipv6 --enable-prof
+cd ace/SSL
+vi Makefile
+/* ad openssl include path */
+DEFAULT_INCLUDES = -I. -I$(srcdir) -I$(top_builddir)/ace -I$(top_builddir)/../../../openssl/openssl/include
+cd ../..
+gmake
+
+
+Compile options:
+-----------------
+TARGET={SOLARIS,LINUX x86,...}
+SIZE={32,64}
+C-COMPILER={gcc,...}
+CPP-COMPILER={g++,...}
+
+
+Serial console communications
+------------------------------
+program name is "minicom"
+
+
+Apache Tomcat
+--------------
+Download:
+  - core
+  - comatibility (unzip the file one directory above apache-tomct-5.5.15) when unzipped the files go in the
+  - Tomcat 5.5\common\endorsed directory
+  - admin
+  - deployer
+Pre-requisites:
+  - J2EE 1.4
+J2EE
+  - download full J2EE and install
+
+
+MySQL on Windows
+----------------
+Download:
+  - Windows Essentials and double click on the downloaded file
+  - follow install instructions
+
+
+Useful tips
+---------------
+remote management
+#rcxdm restart
+
+/* I think the following aer not used anymore */
+/etc/hosts.allow
+/etc/hosts.deny
+
+/etc/sysconfig/SuSEfirewall2
+
+/sbin/SuSEfirewall2
+/sbin/SuSEconfig
+
+***YaST2*****The mother of all configuration gui's
+to open a port on suse linux:
+1. start YaST2 in the bg
+2. select "security & users"
+3. select "firewall"
+4. select "Allowed services"
+5. For "external zone"
+   uncheck "protect firewall from internal zone"
+   click on "Advanced" button
+   select "TCP, UDP, RCP - Ports, or IP protocols (icmp, www, etc)"
+
+Shutdown
+---------
+TO halt system do use -h
+# shutdown -h -t 10 -r now
+TO reboot use:
+# shutdown -F -t 10 -r now
+
+
+SuSE installation
+------------------
+Didn't install SAMBA, Apache, etc
+
+
+RPM
+----
+List all packages installed: > rpm -qa
+List files of a package: > rpm -ql <pkgname obtained from prev command>
+rpm -qa j2sdk
+rpm -qa jdk
+
+
+Apache2
+---------
+linux:/srv/www/htdocs # which apache2ctl
+/usr/sbin/apache2ctl
+
+# apache2ctl start
+
+linux:/srv/www/htdocs # pwd
+/srv/www/htdocs
+
+Needed following file to start apache2 for the first time
+----------------------------------------------------------
+/etc/apache2/sysconfig.d/include.conf
+/* simply copied the global.conf to include.conf from the sysconfig.d dir */
+
+
+MySQL (Installation on Linux)
+------------------------------
+#rpm -qa |grep MySQL
+AND,OR
+#rpm -qa |grep mysql
+/* will list the currently install mysql version. %>mysql -u root -p<foo>  will also tell you the server version */
+
+Look for the following heading re: initial mysql user accounts
+"Securing the Initial MySQL Accounts" in the 5.0 docs
+
+Changing initial passwords (on Unix there are 2-root accounts and 2-annonymous accounts. /* Yes that is 2 each! */
+To use SET PASSWORD on Unix, do this:
+shell> mysql -u root
+mysql> SET PASSWORD FOR ''@'localhost' = PASSWORD('newpwd');
+mysql> SET PASSWORD FOR ''@'host_name' = PASSWORD('newpwd');
+actual for host linux-192.168.1.104
+SET PASSWORD FOR ''@'localhost' = PASSWORD('foobartop');
+SET PASSWORD FOR ''@'linux' = PASSWORD('foobartop');
+
+##### Prem
+grant all on *.* to username@'%' identified by 'password';
+##### Prem
+
+For Unix, do this:
+shell> mysql -u root
+mysql> SET PASSWORD FOR 'root'@'localhost' = PASSWORD('newpwd');
+mysql> SET PASSWORD FOR 'root'@'host_name' = PASSWORD('newpwd');
+Actual
+SET PASSWORD FOR 'root'@'localhost' = PASSWORD('manager');
+SET PASSWORD FOR 'root'@'linux' = PASSWORD('manager');
+
+Also see the section on "5.8.4. Connecting to the MySQL Server" in the 5.0 docs
+
+GRANT ALL PRIVILEGES ON <db>.* TO root@'192.168.1.0/255.255.255.0';
+
+On the MySQL Query Browser side:
+enter ip address 192.168.1.104 (ip of where mysql db is)
+enter user "root"
+do NOT enter password
+enter a "db" (i.e, "schema") name
+
+
+http://dev.mysql.com/doc/refman/5.0/en/linux-rpm.html
+Downloaded following RPM files for SuSE Enterprise linux 9
+MySQL-client-standard-5.0.18-0.sles9.i586.rpm  
+MySQL-server-standard-5.0.18-0.sles9.i586.rpm
+MySQL-devel-standard-5.0.18-0.sles9.i586.rpm   
+MySQL-shared-standard-5.0.18-0.sles9.i586.rpm
+
+Firstly did as user 'root':
+linux:/home/prem # pwd
+/home/prem
+linux:/home/prem # rpm -e mysql-4.1.13-3
+linux:/home/prem # rpm -e mysql-client-4.1.13-3
+rpm -i MySQL-server-standard-5.0.18-0.sles9.i586.rpm
+
+linux:/home/prem # rpm -i MySQL-server-standard-5.0.18-0.sles9.i586.rpm
+warning: MySQL-server-standard-5.0.18-0.sles9.i586.rpm: V3 DSA signature: NOKEY, key ID 5072e1f5
+PLEASE REMEMBER TO SET A PASSWORD FOR THE MySQL root USER !
+To do so, start the server, then issue the following commands:
+/usr/bin/mysqladmin -u root password 'new-password'
+/usr/bin/mysqladmin -u root -h linux password 'new-password'
+See the manual for more instructions.
+
+Please report any problems with the /usr/bin/mysqlbug script!
+
+The latest information about MySQL is available on the web at
+http://www.mysql.com
+Support MySQL by buying support/licenses at https://order.mysql.com
+Starting MySQL.                                                       done
+linux:/home/prem # ps -ef |grep mysql
+root     23218     1  0 10:52 pts/0    00:00:00 /bin/sh /usr/bin/mysqld_safe --datadir=/var/lib/mysql --pid-file=/var/lib/mysql/linux.pid
+mysql    23239 23218  2 10:52 pts/0    00:00:00 /usr/sbin/mysqld --basedir=/ --datadir=/var/lib/mysql --user=mysql --pid-file=/var/lib/mysql/linux.pid --skip-locking
+linux:/home/prem #
+
+linux:/home/prem # rpm -i MySQL-client-standard-5.0.18-0.sles9.i586.rpm
+warning: MySQL-client-standard-5.0.18-0.sles9.i586.rpm: V3 DSA signature: NOKEY, key ID 5072e1f5
+linux:/home/prem #
+
+linux:/home/prem # rpm -i MySQL-shared-standard-5.0.18-0.sles9.i586.rpm
+warning: MySQL-shared-standard-5.0.18-0.sles9.i586.rpm: V3 DSA signature: NOKEY, key ID 5072e1f5
+
+linux:/home/prem # rpm -i MySQL-devel-standard-5.0.18-0.sles9.i586.rpm
+warning: MySQL-devel-standard-5.0.18-0.sles9.i586.rpm: V3 DSA signature: NOKEY, key ID 5072e1f5
+linux:/home/prem #
+
+
+Samba
+-----
+linux:/etc/apache2/sysconfig.d # rpm -qa |grep samba
+samba-doc-3.0.20-4
+samba-vscan-0.3.6b-4.1
+yast2-samba-client-2.12.4-2
+kdebase3-samba-3.4.2-26
+yast2-samba-server-2.12.8-2
+samba-client-3.0.20b-3.1
+samba-3.0.20b-3.1
+
+
+Hummingbird Exceed and X Display Manager Control Protocol XDMCP on Linux
+-------------------------------------------------------------------
+http://www.faqs.org/docs/Linux-HOWTO/XDMCP-HOWTO.html
+
+
+Emails sub-dir
+---------------
+~prem/email
+
+
+Acronymphs
+-----------
+ATA
+SATA - Serial ATA
+IDE
+JWS - Java Web Services
+WSDD - Web Services Deployment Descriptor
+IPCDN - IP over Cable Data Network
+IPTDR - IP Traffic Detail Record
+IPDR - IP Detail Record
+DSO - Dynamic Shared Object
+PLT - 
+ELF - 
+
+
+Adding an existing user to a new group
+----------------------------------------
+as root:
+usermod -G <group-name> <username>
+
+User and Group addition
+-----------------------
+groupadd <group_name>
+useradd -d <home_dir> -m -g <group_name> -s <shell> -u <uid> -p <password> <login_name>
+
+As user 'root'
+groupadd mysql
+mkdir /home/mysql
+useradd -d /home/mysql -m -g mysql> -s /bin/bash -p mysqlmysql mysql
+chown -R mysql:mysql /home/mysql
+
+
+C++ inheritance with assignment operator
+-------------------------------------------
+As opposed to base class' constructor and destructor, which are automatically invoked from the derived class' constructor and destructor respectively, a user-defined assignment operator defined in a base class is overridden - rather than being extended - when re-defined in a derived class. In order to extend the assignment operator in a derived class, one has first to invoke the base's assignment operator explicitly, and then add the assignment operations required for the derived class.
+
+ 
+class C {
+char *p; 
+public: 
+	enum {size = 10}; //size serves as a constant
+	const char * Getp() const {return p;}
+	C() : p ( new char [size] ) {}
+C& operator = (const C& other) {
+if (this != &other) 
+		strcpy(p, other.Getp() ); 
+		return *this;} 
+//...destructor and copy constructor
+};
+class D : public C {
+	char *q;
+public: 
+	const char * Getq() const {return q;}
+	D(): q  ( new char [size] ) {}
+D& operator = (const D& other) 
+{ 
+		if (this != &other)  
+		C::operator=(other);  //first invoke base's assignment operator explicitly
+		strcpy(q, (other.Getq()));  //add extensions here
+		return *this;
+} 
+//...destructor and copy constructor
+};
+
+
+
+

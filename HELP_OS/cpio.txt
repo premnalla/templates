@@ -1,0 +1,33 @@
+     % find . -print -depth | cpio -ov > tree.cpio
+
+   This will take all the files in the current directory, the
+directories below and place them in the archive tree.cpio.  Again the
+`-o' creates an archive, and the `-v' option shows you the name of the
+files as they are archived.  *Note Copy-out mode::.  Using the `.' in
+the find statement will give you more flexibility when doing restores,
+as it will save file names with a relative path vice a hard wired,
+absolute path.  The `-depth' option forces `find' to print of the
+entries in a directory before printing the directory itself.  This
+limits the effects of restrictive directory permissions by printing the
+directory entries in a directory before the directory name itself.
+
+   Extracting an archive requires a bit more thought because cpio will
+not create directories by default.  Another characteristic, is it will
+not overwrite existing files unless you tell it to.
+
+     % cpio -iv < directory.cpio
+
+   This will retrieve the files archived in the file directory.cpio and
+place them in the present directory.  The `-i' option extracts the
+archive and the `-v' shows the file names as they are extracted.  If
+you are dealing with an archived directory tree, you need to use the
+`-d' option to create directories as necessary, something like:
+
+     % cpio -idv < tree.cpio
+
+   This will take the contents of the archive tree.cpio and extract it
+to the current directory.  If you try to extract the files on top of
+files of the same name that already exist (and have the same or later
+modification time) cpio will not extract the file unless told to do so
+by the -u option.  *Note Copy-in mode::.
+

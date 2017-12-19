@@ -1,0 +1,398 @@
+  Scalability 
+  
+  
+   
+   
+   
+   
+   
+   
+   
+  
+   
+   
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+ Serving Large Domains 
+Handling High-Volume Local Delivery 
+Supporting Many Concurrent Clients 
+System Tuning
+Setting the TCP TIME_WAIT time 
+HyperThreading 
+Handling High-Volume SMTP Delivery 
+Estimating Resources Usage 
+OS Limitations and OS Tuning 
+Solaris 
+Windows 
+Linux 
+FreeBSD 
+HP-UX 
+Mac OS X 
+ 
+
+This section explains how CommuniGate Pro and the Server OS can be optimized for maximizing per-server capacity and performance. 
+For horizontal scaling and multi-server redundancy, the Cluster configurations should also be used. 
+ 
+
+
+
+--------------------------------------------------------------------------------
+
+Serving Large Domains
+If some domains you serve have a large number of accounts (2,000 or more), you should consider storing accounts in Account Subdirectories rather than in a flat domain directory. This recommendation is based on the method that file systems use to maintain the list of entries within a directory index, and the maximum recommended number of entries is largely dependent on the type of file system in use. For example, a file system with a hashed directory index is capable of efficiently accessing more directory entries than those file systems that use only a flat file for directory indexing. Some file systems can easily access an index of over 50,000 entries, while others become sluggish at only 1,000. 
+This same principle also applies to sites with over 2,000 or more domains on the server or cluster. In this scenario, it is recommended to use Domain Subdirectories 
+
+You can store subdirectories on multiple logical volumes, if necessary for storage volume or performance - just replace the moved subdirectories with their symbolic links. You can also move domain directories from the Domains directory and replace them with symbolic links. 
+
+
+
+--------------------------------------------------------------------------------
+
+Handling High-Volume Local Delivery
+When the number of messages to be delivered to local CommuniGate Pro accounts is expected to be higher than 1 message/second, you should allocate more "processors" in the Local Delivery Module. This is especially important for environments that process heavy inbound SMTP traffic (often used as a performance test environment). Insufficient number of Local Delivery module processors (threads) may result in excessive Queue growth and large latency in message delivery. You should watch the Local Delivery module Monitor and allocate more processors (threads) to that module if you see that the module Queue size grows to more than 200-300 messages. Do not allocate additional threads if, for example, you have 10 Local Delivery processors and see the waiting Local Delivery queue of 200 messages: this Queue size introduces only 1-2 seconds delivery latency. Increase the number of Local Delivery threads only if you see that Queue growing. 
+Some types of storage arrays benefit from a significant number of parallel delivery threads. For example, there are some NFS arrays which can deliver messages more efficiently with 100 Local Delivery processors than with 10, given the same number of messages. The storage vendor should be requested to provide information about the optimal number of parallel write operations for each system accessing the array, and the number of CommuniGate Pro Local Delivery processors can be adjusted to hit this target number. As Local Delivery processors are static (the configured number of processors remain in existence consistently throughout the life of the process), it is important to configure enough processors but wasteful of system resources to configure vastly too many. 
+
+Administrators of high-end mail servers may want to disable the Use Conservative Info Updates option (located in the Local Account Options on the WebAdmin Obscure Settings page). This decreases the load on the file I/O subsystem. 
+
+
+
+--------------------------------------------------------------------------------
+
+Supporting Many Concurrent Clients
+For larger installations, the number of users that can be served simultaneously is an issue of a very high concern. In order to estimate how many users you can serve at the same time, you should realize what type of service your clients will use. 
+
+POP3 Clients 
+POP3 mailers connect to the server just to download new messages. Based on the average connections speeds, expected mail traffic, and your user habits, you can estimate how much time an average session would take. For example, if you are an ISP and you estimate that an average your "check mail" operation will take 15 seconds, and they mostly check their accounts an average of 2 times each during 12 peak hours, then with 100,000 POP3 users you can expect to see 100,000 * 2 * 15 sec / (12*60*60 sec) = ~70 concurrent POP3 sessions. 
+This number is not high, but POP3 sessions put a high load on your disk I/O and network I/O subsystems: after authentication, a POP3 session is, essentially, a "file downloading" type of activity. 
+
+
+IMAP4 Clients 
+The IMAP protocol allows a much more sophisticated processing than POP3. Mail is usually left on the server, and some unwanted messages can be deleted by users without downloading them first. 
+The IMAP protocol is "mail access", not "mail downloading" protocol. IMAP users spend much more time being connected to the server. In corporate environments, users can leave their IMAP sessions open for hours, if not days. While such inactive sessions do not put any load on your disk or network I/O subsystems or CPU, each session still requires an open network connection and a processing thread in the server. Since the IMAP protocol allows users to request search operations on the server, IMAP users can also consume a lot of CPU resources if they use this feature a lot. 
+
+If supporting many IMAP or POP connections, it is important to configure more IMAP and POP channels, to allow for large numbers of users to connect concurrently. Some modern IMAP clients and the MAPI connector may even open multiple connections for a single account, and each is counted in the IMAP channel total. Fortunately, IMAP and POP channels are created only when used, so no resources are consumed if the IMAP and POP channels are set to 10000 if only 2000 are being used - however, be careful to set this value below the threshold where your system will be unable to withstand further connections, and could become unresponsive for users already connected. The IMAP and POP channels setting provides a limit for protecting your system or cluster resources from being overwhelmed, in the case of a peak load or denial of service (DoS) attack. 
+
+WebUser Clients 
+The CommuniGate Pro WebUser Interface provides the same features provided by IMAP mailer clients, but it does not require an open network connection (and processing thread) for each user session. When a client (a browser) sends a request, a network connection is established, the request is processed with a server thread, and the connection is closed. 
+This allows the Server to use just 100 HTTP connections to serve 3,000 or more open sessions. 
+
+CommuniGate Pro also supports the HTTP 1.1 "Keep-Alive" option, located on the WebUser Interface Settings page as "Support Keep-Alive". HTTP Keep-Alive sessions for WebUsers will cause each WebUser session to maintain one or more open connections from the user client to the server for the entire session duration. This method is not recommended on a busy, high-volume server as it will consume significant CPU and operating system resources, but can be used to optimize WebUser response time for end users if the system can handle the additional overhead. Keep-Alive connections will only be offered on Frontend servers in a Cluster. 
+
+SIP/RTP Clients 
+As compared to messaging, which tends to be very disk I/O-limited, SIP and RTP data has real-time requirements and only a few actions (such as a SIP REGISTER) cause any disk I/O. Real-time traffic is highly susceptible to any network or system latency, and as such is more closely tied to CPU performance than email. However, these real-time requirements can be satisfied through today's ever increasing CPU and bus speeds. 
+In order to optimize SIP and RTP performance, your CommuniGate Pro Server should run on modern systems with adequate CPU and memory headroom. If most of the traffic through CommuniGate Pro is just SIP signalling traffic, then even a single-CPU server should be capable of upwards of 100 calls per second. However, when performing significant amounts of SIP and RTP proxying, NAT traversal, PBX functions and media termination, the demands on memory, network, and especially CPU will be significant. 
+Increasing the number of SIP Server and SIP Client processors, as well as RealTime processors, is required. These threads are all "static", meaning that the threads are created regardless of whether or not they are in use, and they will consume some memory resources for their stacks. 
+
+
+
+--------------------------------------------------------------------------------
+
+System Tuning
+When optimizing a system for performance, there are often certain system kernel and TCP/UDP stack tuning options available which allow the system to open more concurrent network connections and allow the CommuniGate Pro process to open many file descriptors. While most operating systems allow for tuning these options, the method of doing so will differ greatly across platforms, and you may need to contact your operating system vendor or research the proper way to modify your system accordingly. 
+
+The number of available file descriptors should be set to approximately 2x the number of concurrent IMAP, POP, SMTP, SIP/RTP, and other types of connections required. You should also be certain that the operating system is capable of efficiently opening this many TCP/UDP sockets simultaneously - some OSs have a "hash table" for managing sockets, and this table should be set greater than the number of sockets required. Often times, allowing at least 8192 sockets and 16384 open file descriptors per process should be plenty for most systems, even under significant load. Increasing these values much too high can in most cases consume some memory resources, and should be avoided. Setting the limit on the number of open file descriptors to "unlimited" in the shell can also cause problems on some operating systems, as this could set the available file descriptors to the 32-bit or 64-bit limits, which can in some cases waste memory and CPU resources. 
+
+Setting the TCP TIME_WAIT time
+When you expect to serve many TCP/IP connections, it is important to check the time your Server OS waits before releasing a logically closed TCP/IP socket. If this time is too long, those "died" sockets can consume all OS TCP/IP resources, and all new connections will be rejected on the OS level, so the CommuniGate Pro Server will not be able to warn you. 
+
+This problem can be seen even on the sites that have just few hundred accounts. This indicates that some of the clients have configured their mailers to check the server too often. If client mailers connect to the server every minute, and the OS TIME_WAIT time is set to 2 minutes, the number of "died" sockets will grow, and eventually, they will consume all OS TCP/IP resources. 
+
+While the default TIME_WAIT setting on many systems is often 120 or 240 seconds, some operating systems have begun setting a default TIME_WAIT value of 60 seconds, and it is probably safe to setTIME_WAIT time as low as 20-30 seconds. 
+
+The TIME_WAIT problem is a very common one for Windows NT systems. Unlike most Unix systems, Windows NT does not have a generic setting for the TIME_WAIT interval modification. To modify this setting, you should create an entry in the Windows NT Registry (the information below is taken from the http://www.microsoft.com site:
+
+Run Registry Editor (RegEdit.exe). 
+Go to the following key in the registry: 
+HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\tcpip\Parameters 
+Choose Add Value from the Edit menu and create the following entry:
+Value Name: 
+TcpTimedWaitDelay 
+Data Type: 
+REG_DWORD 
+Value: 
+30-300 (decimal) - time in seconds 
+Default: 0xF0 (240 decimal) not in registry by default 
+Quit the Registry Editor 
+Restart the computer for the registry change to take effect. 
+Description: This parameter determines the length of time that a connection will stay in the TIME_WAIT state when being closed. While a connection is in the TIME_WAIT state, the socket pair cannot be reused. This is also known as the "2MSL" state, as by RFC the value should be twice the maximum segment lifetime on the network. See RFC793 for further details on MSL. 
+
+HyperThreading
+Most operating systems (including Linux, FreeBSD, Solaris, Windows) do not fully support x86 HyperThreading. 
+
+Unlike multi-core and/or multi-CPU technologies, HyperThreading provides very small (if any) performance gain, but it causes many problems: threads library crashing, poor NFS performance under load, etc. 
+Use your server BIOS settings to disable HyperThreading. 
+
+
+
+--------------------------------------------------------------------------------
+
+Handling High-Volume SMTP Delivery
+To handle high-volume (more than 50 messages/second) SMTP delivery load you need to ensure that your DNS server(s) can handle the load CommuniGate Pro generates and that the UDP packet exchange between CommuniGate Pro and the DNS servers does not suffer from excessive packet loss. You may want to re-configure your Routers to give UDP traffic a higher priority over the TCP traffic. 
+You may want to try various values for the Concurrent Requests setting in the Domain Name Resolver panel on the Obscure Settings page: depending on your DNS server(s) setup, increasing the number of Concurrent Requests over 10-20 can result in DNS server performance degradation. 
+
+If an average size of the messages sent via SMTP is higher than 20K, you should carefully select the number of SMTP sending channels (threads), too. Too many concurrent data transfers can exceed the available network bandwidth and result in performance degradation. 500 channels sending data to remote sites with a relatively slow 512Kbit/sec connectivity can generate 250Mbit/sec outgoing traffic from your site. Usually the traffic is much lighter, since outgoing channels spend a lot of time negotiating parameters and exchanging envelope information. But as the average message size grows channels spend more time sending actual message data and the TCP traffic generated by each channel increases. 
+
+If using SMTP External Message Filters (Plugins) - such as anti-virus, anti-spam, or other content-filtering helpers - then the SMTP load can be optimized by putting any temporary file directories used by these plugins onto a memory or tmpfs filesystem, if your system has the available memory. Since all messages should be queued in the real CommuniGate Pro Queue directories, there should be no risk in putting the plugin temporary file directories, as long as those directories never contain the only copy of any message. Even in the event of an error, power failure, or server crash, any undelivered message should always be queued to "stable storage" in the normal CommuniGate Pro Queue directory. 
+
+
+
+--------------------------------------------------------------------------------
+
+Estimating Resources Usage
+Each network connection requires one network socket descriptor in the server process. On Unix systems, the total number of sockets and files opened within a server process is limited. 
+When the CommuniGate Pro server starts, it tries to put this limit as high as possible, and then it decreases it a bit, if it sees that the limit set can be equal to the system-wide limit (if the CommuniGate Pro consumes all the "descriptors" available on the server OS, this will most likely result in the OS crash). The resulting limit is recorded in the CommuniGate Pro Log. 
+
+To increase the maximum number of file and socket descriptors the CommuniGate Pro Server process can open, see the instructions below. 
+
+Each network connection is processed by a server thread. Each thread has its own stack, and the CommuniGate Pro threads have 128Kbyte stacks on most platforms. Most of the stack memory is not used, so they do not require a lot of real memory, but they do add up, resulting in bigger virtual memory demand. Most OSes do not allow the process virtual memory to exceed a certain limit. Usually, that limit is set to the OS swap space plus the real memory size. So, on a system with just 127Mbytes of the swap space and 96Mbytes of real memory, the maximum virtual memory that can be allocated is 220Mbytes. Since the swap space is shared by all processes that run under the server OS, the effective virtual memory limit on such a system will be around 100-150MB - and, most likely, the CommuniGate Pro Server will be able to create 500-1000 processing threads. 
+
+On 32-bit computers, 4GB of virtual memory is the theoretical process memory size limit (and in reality this virtual memory limit for user-space processes is often only 2GB), and allocating more than 4GB of disk space for page swapping does not provide any benefit. Since memory has dropped in price significantly, 4GB of RAM memory is often recommended for 32-bit systems in order to maximize the available memory capacity, on those operating systems which allow a single process to utilize 2GB or more of virtual memory space. When supporting many concurrent IMAP, POP3, or SIP/RTP connections, the CGServer process will grow in size according to the per-thread stack space allocated, in addition to other memory needs. If supporting greater than 4000 processing threads, then an operating system should be considered which can allocate more than 2GB of virtual memory to the CGServer process, and 4GB of RAM memory should be installed on the system. 
+
+During a POP3 or IMAP4 access session one of the account mailboxes is open. If that mailbox is a text file (BSD-type) mailbox, the mailbox file is open. During an incoming SMTP session a temporary file is created for an incoming message, and it is kept open while the message is being received. So, on Unix systems, the total number of open POP, IMAP, and SMTP connections cannot exceed 1/2 of the maximum number of socket/file descriptors per process. For high-performing systems, you may want to consider allowing at least 8192 or more open file descriptors per process. 
+
+While a WebUser session does not require a network connection (and thus a dedicated socket and a thread), it can keep more than one mailbox open. (If using HTTP Keep-Alive, then each WebUser session does consume at least one network connection, also.) 
+
+On Unix systems, when the Server detects that the number of open network sockets and file descriptors is coming close to the set limit, it starts to reject incoming connections, and reports about this problem via the Log. 
+
+
+
+--------------------------------------------------------------------------------
+
+OS Limitations and OS Tuning
+This section explains how to optimize the kernel and TCP tuning parameters available on some of the most common CommuniGate Pro platform Operating Systems. The most commonly encountered limits are:
+Open file descriptors - the maximum number of files and network sockets a single process can open. 
+The maximum size of virtual memory available to a process. 
+Please always confirm these changes with your operating system vendor, and always test changes on a test system before using on a production server. Variations in operating system versions, patches, hardware, and load requirements can vary the best settings for these values. Examples are provided as a guide but may not always be optimal for every situation. 
+
+
+Solaris
+Generally applicable to Solaris 8, 9, and 10 
+CommuniGate Pro "Startup.sh" file
+Startup.sh is by default referenced at /var/CommuniGate/Startup.sh. You may need to create it. This file is read by the init startup script /etc/init.d/STLKCGPro.init to be executed at boot time. The following is a Startup.sh file for CommuniGate Pro version 4.3 or later for most Solaris implementations. In some cases, you may find that more file descriptors are required, so the "ulimit -n" value can be increased up to 32768 safely, if necessary:: 
+  /var/CommuniGate/Startup.sh
+  ### Startup.sh begin
+  SUPPLPARAMS="--DefaultStackSize 131072 --useNonBlockingSockets --closeStuckSockets --CreateTempFilesDirectly 10"
+  ulimit -n 16384
+  ### Startup.sh end
+ncsize
+Solaris ncsize kernel parameter has to be decreased on the large systems, especially - on Dynamic Cluster backends. The cache this parameter controls cannot keep any usable subset of file paths, but the large cache size causes the system to waste a lot of CPU cycles checking this cache table (symptoms: more than 50% CPU utilization, most CPU time is spent in the kernel). Decrease the ncsize kernel parameter value down to 1000-2000. 
+Following are a few settings appropriate for most Solaris systems, where significant load capacity is required. A good estimate is to set these values between 1-2 times the expected peak capacity. 
+
+Additions to /etc/system:
+  * system file descriptor limit (setting the max setting to 32768 may
+  * be better in some instances)
+  set rlim_fd_cur=4096
+  set rlim_fd_max=16384
+  * tcp connection hash size
+  set tcp:tcp_conn_hash_size=16384
+note: /etc/system changes require a system reboot to take effect 
+Other kernel driver options:
+  # solaris 9/10 uses a default of 49152
+  ndd -set /dev/tcp tcp_recv_hiwat 49152 # or 65536
+  ndd -set /dev/tcp tcp_xmit_hiwat 49152 # or 65536
+  # increase the connection queue
+  ndd -set /dev/tcp tcp_conn_req_max_q 512
+  ndd -set /dev/tcp tcp_conn_req_max_q0 5120
+  # decrease timers
+  ndd -set /dev/tcp tcp_fin_wait_2_flush_interval 135000
+  ndd -set /dev/tcp tcp_time_wait_interval 60000
+  ndd -set /dev/tcp tcp_keepalive_interval 30000
+  ## naglim should likely only be disabled on Backends 
+  ## 1=disabled, default is 53 (difficult to confirm)
+  # ndd -set /dev/tcp tcp_naglim_def 1
+
+Windows 9x/NT/200x/XP
+The Windows system limits the maximum port number assigned to outgoing connections. By default this value is 5000. You may want to increase that value to 20,000 or more, by adding the MaxUserPort DWORD-type value to the 
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters,
+key. 
+For more details, check the Microsoft Support Article Q196271. 
+
+
+Linux
+CommuniGate Pro "Startup.sh" file
+On Linux, the Startup.sh file is referenced by default at /var/CommuniGate/Startup.sh. You may need to create it. This file is read by the init startup script /etc/init.d/CommuniGate to be executed at boot time. The following is a Startup.sh file for CommuniGate Pro version 4.3 or later for Linux 2.4 or later. In some cases, you may find that more file descriptors are required, so the "ulimit -n" value can be increased up to 32768 safely, if necessary: 
+  /var/CommuniGate/Startup.sh
+  ### Startup.sh begin
+  SUPPLPARAMS="--DefaultStackSize 131072 --useNonBlockingSockets --closeStuckSockets --CreateTempFilesDirectly 10"
+  ulimit -n 16384
+  ### Startup.sh end
+Linux kernel 2.2 and previous:
+The pre 2.2.x Linux kernels allowed a process to open 256 files descriptors only. If you want your server to handle more than 100 TCP/IP connections, use the Linux kernel 2.2.x or a later version to avoid the "out of file descriptors" problem. 
+The Linux threads library uses the one-to-one model, so each CommuniGate Pro thread is a kernel thread (actually, a "process"). This may be not the best solution for very large systems that should run several thousand threads. 
+
+In spite of the fact that the Linux threads are handled within the kernel, the Linux thread library has its own scheduler, too. By default, that scheduler uses a static table with 1024 entries, so no more than 1024 threads can be created. This is enough for even large sites serving may POP and WebMail users, but can cause problems for sites that need to serve several hundred concurrent IMAP users. To increase this number, the Linux threads library has to be recompiled with the PTHREAD_THREADS_MAX parameter increased. 
+
+The Linux threads library allocates thread stacks with 2MB steps. This does not allow the system to start more than 1000 threads on 32-bit machines. CommuniGate Pro threads do not need stacks of that size. You may want to recompile the Linux threads library decreasing the STACK_SIZE parameter to 128K. 
+
+Linux kernel 2.4:
+Linux kernel 2.4 allows for most important tuning options to be easily configured. In some 2.4 distributions, however, PTHREAD_THREADS_MAX may still be compiled at 1024 or another similarly low number - if this is the case, the Linux threads library must be recompiled with the PTHREAD_THREADS_MAX parameter increased. Most Linux 2.4 distributions are based on the "LinuxThreads" threading library. There are some Linux 2.4 distributions which have attempted to back-port the newer POSIX threading library to the 2.4 kernel - in some instances, running POSIX threads with 2.4 kernel has proven to cause stability problems for many applications, including CommuniGate Pro. It is recommended to use the LinuxThreads library with CommuniGate Pro when running the 2.4 kernel. This is provided for (by default) in the /etc/init.d/CommuniGate startup script: 
+  LD_ASSUME_KERNEL=2.4.1
+  export LD_ASSUME_KERNEL
+Following are some additional tuning options for Linux 2.4. For most Linux distributions, these shell commands should be placed into a boot script to be run at system startup. RedHat and a few other distributions may also provide a facility to configure "sysctl" data in the file /etc/sysctl.conf: 
+  #!/bin/sh
+  # Linux 2.4 tuning script
+  # max open files
+  echo  131072 > /proc/sys/fs/file-max
+  # kernel threads
+  echo 131072 > /proc/sys/kernel/threads-max
+  # socket buffers
+  echo 65536 > /proc/sys/net/core/wmem_default
+  echo 1048576 > /proc/sys/net/core/wmem_max
+  echo 65536 > /proc/sys/net/core/rmem_default
+  echo 1048576 > /proc/sys/net/core/rmem_max
+  # netdev backlog
+  echo 4096 > /proc/sys/net/core/netdev_max_backlog
+  # socket buckets
+  echo 131072 > /proc/sys/net/ipv4/tcp_max_tw_buckets
+  # port range
+  echo '16384 65535' > /proc/sys/net/ipv4/ip_local_port_range
+One other note about kernel 2.4 and 2.6 - there is a noticeable networking performance improvement in compiling your kernel without NETFILTER (iptables) if not using iptables on your CommuniGate Pro server. 
+Linux kernel 2.6 and later:
+Linux kernel 2.6 introduced "POSIX threads", replacing the previous default thread library "LinuxThreads". Kernel 2.6 implementations are the first Linux release for which using POSIX threading is recommended. If using Linux kernel 2.6 and POSIX threading (and preferably using a distribution for which kernel 2.6 was the default kernel), then the /etc/init.d/CommuniGate init script should be modified to comment out the following lines: 
+  # LD_ASSUME_KERNEL=2.4.1
+  # export LD_ASSUME_KERNEL
+Commenting these lines should allow for the POSIX thread shared libraries (located in /lib/tls/) to be linked in by default. 
+
+Following are some additional tuning options for Linux 2.6. For most Linux distributions, these shell commands should be placed into a boot script to be run at system startup. RedHat and a few other distributions may also provide a facility to configure "sysctl" data in the file /etc/sysctl.conf: 
+  #!/bin/sh
+  # Linux 2.4 tuning script
+  # max open files
+  echo  131072 > /proc/sys/fs/file-max
+  # kernel threads
+  echo 131072 > /proc/sys/kernel/threads-max
+  # socket buffers
+  echo 65536 > /proc/sys/net/core/wmem_default
+  echo 1048576 > /proc/sys/net/core/wmem_max
+  echo 65536 > /proc/sys/net/core/rmem_default
+  echo 1048576 > /proc/sys/net/core/rmem_max
+  # netdev backlog
+  echo 4096 > /proc/sys/net/core/netdev_max_backlog
+  # socket buckets
+  echo 131072 > /proc/sys/net/ipv4/tcp_max_tw_buckets
+  # port range
+  echo '16384 65535' > /proc/sys/net/ipv4/ip_local_port_range
+
+
+FreeBSD
+Following are some tuning optimizations applicable to both FreeBSD 4 and FreeBSD 5. 
+
+CommuniGate Pro "Startup.sh" file
+Startup.sh is by default referenced at /var/CommuniGate/Startup.sh. You may need to create it. This file is read by the init startup script /usr/local/etc/rc.d/CommuniGate.sh to be executed at boot time. The following is a Startup.sh file for CommuniGate Pro version 4.3 or later for most FreeBSD implementations. In some cases, you may find that more file descriptors are required, so the "ulimit -n" value can be increased up to 32768 safely, if necessary:: 
+  /var/CommuniGate/Startup.sh
+  ### Startup.sh begin
+  SUPPLPARAMS="--DefaultStackSize 131072 --useNonBlockingSockets --closeStuckSockets --CreateTempFilesDirectly 10"
+  ulimit -n 16384
+  ### Startup.sh end
+A /boot/loader.conf.local file can be used to set boot-time kernel parameters: 
+
+  # increase the TCP connection hash to a value just greater than peak needs
+  # (this can be set higher if necessary)
+  net.inet.tcp.tcbhashsize="16384"
+Building an optimized kernel allows for an increase in maximum process size and increasing the number of nmbclusters for networking capacity: 
+
+  # increase max allowable process virtual memory size
+  options         DFLDSIZ="(128*1024*1024)"
+  options         MAXDSIZ="(2048*1024*1024)"
+  options         MAXSSIZ="(2048*1024*1024)"
+  # increase nmbclusters
+  options         NMBCLUSTERS=65536
+
+
+FreeBSD 4
+While FreeBSD 4 is renown as an incredibly stable platform, it does not provide Symmetric Multiprocess (SMP) support for multithreaded applications. Because of this, it typically does not make cost-effective sense to allocate anything more than a single CPU server with FreeBSD 4, except perhaps in the case where there are multiple applications (in addition to CommuniGate Pro) running on the system, such as perhaps a DNS server on the system used for faster name service queries and caching. 
+Following are some additional tuning options for FreeBSD 4. Generally, this script should be located at /usr/local/etc/rc.d/tuning.sh: 
+
+  #!/bin/sh
+  # FreeBSD 4 tuning script
+  # increase socket buffers
+  sysctl -w kern.ipc.maxsockbuf=1048576
+  sysctl -w kern.ipc.somaxconn=4096
+  # increase default buffer size
+  sysctl -w net.inet.tcp.sendspace=65536
+  sysctl -w net.inet.tcp.recvspace=65536
+  # decrease time wait
+  sysctl -w net.inet.tcp.keepidle=300000
+  sysctl -w net.inet.tcp.keepintvl=30000
+  # increase vnodes
+  sysctl -w kern.maxvnodes=131072
+  # increase maxfiles/maxfiles per process
+  sysctl -w kern.maxfiles=131072
+  sysctl -w kern.maxfilesperproc=32768 # or 65536 if necessary
+  # increase port range
+  sysctl -w net.inet.ip.portrange.last=65535
+  # default: net.inet.ip.rtexpire: 3600
+  sysctl -w net.inet.ip.rtexpire=300
+  # decrease MSL from 30000
+  sysctl -w net.inet.tcp.msl=10000
+  # vfs.vmiodirenable: cache directory locations in memory (?)
+  # this may help in some cases, but be careful and test if used 
+  # sysctl -w vfs.vmiodirenable=1
+
+
+FreeBSD 5
+FreeBSD 5 introduced true SMP support for multiple CPUs, and therefore is better optimized for CommuniGate Pro's highly threaded resource needs. Sysctl settings in FreeBSD 5 can be set automatically in the /etc/sysctl.conf file: 
+  # increase socket buffers
+  kern.ipc.maxsockbuf=1048576
+  kern.ipc.somaxconn=4096
+  # increase default buffer size
+  net.inet.tcp.sendspace=65536
+  net.inet.tcp.recvspace=65536
+  # decrease time wait
+  net.inet.tcp.keepidle=300000
+  net.inet.tcp.keepintvl=30000
+  # increase vnodes
+  kern.maxvnodes=131072
+  # increase maxfiles/maxfiles per process
+  kern.maxfiles=131072
+  kern.maxfilesperproc=32768 # or 65536 if necessary
+  # increase port range
+  net.inet.ip.portrange.last=65535
+  # default: net.inet.ip.rtexpire: 3600
+  net.inet.ip.rtexpire=300
+  # decrease MSL from 30000
+  net.inet.tcp.msl=10000
+  # vfs.vmiodirenable: cache directory locations in memory (?)
+  # this may help in some cases, but be careful and test if used 
+  # vfs.vmiodirenable=1
+
+
+HP-UX
+HP-UX kernel parameters for HP-UX are set through a few different mechanisms, depending on your HP-UX version. The following kernel parameters are important to increase higher than peak capacity needs: 
+  maxfiles      Soft file limit per process
+  maxfiles_lim  Hard file limit per processes
+  maxdsiz       Maximum size of the data segment
+  nfile         Maximum number of open files
+  ninode        Maximum number of open inodes
+  
+  # suggested parameter settings
+  maxfiles      4096
+  maxfiles_lim  32768
+  maxdsiz       (2048*1024*1024)
+  nfile         32768
+  ninode        32768
+Decreasing the TIME_WAIT for TCP is also recommended: 
+
+  ndd -set /dev/tcp tcp_time_wait_interval 60000
+
+Mac OS X
+In older versions of Mac OS X, there may be a 1600-1800 descriptors/process "hard limit" set by default. In CommuniGate Pro version 5.0, the maximum number of file descriptors is statically set at 8192 FDs. 
+The Mac OS X sets a 6MB limit on "additional" virtual memory an application can allocate. This is not enough for sites with more than 2,000 users, and you should increase that limit by specifying the following in the CommuniGate Pro Startup.sh file: 
+
+  ulimit -d 1048576
+  ulimit -n 16384
+
+--------------------------------------------------------------------------------
+
+CommuniGate® Pro Guide. Copyright © 1998-2006, Stalker Software, Inc. 

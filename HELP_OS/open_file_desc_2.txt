@@ -1,0 +1,114 @@
+Linux: Increasing the number of open file descriptors 
+
+--------------------------------------------------------------------------------
+
+A small number of open file descriptors (sockets) can significantly reduce both the performance of an Internet Server and the load that workload generator like httperf can generate. This is meant to provide some information about how to increase the limits on the number of open file descriptors (sockets) on Linux. Note: the actual numbers used below are examples. The numbers you should use will depend on weather you are modifying a system that will be used as a client or a server and the load being generated. In this example we increase the limit to 65535. 
+
+Also note that some of these steps may or may not be required depending on whether you are using PAM and if some of the stuff is being done remotely using ssh. 
+
+To check and modify system limits. 
+[The current limit shown is 8192]
+% cat /proc/sys/fs/file-max
+8192
+
+[To increase this to 65535 (as root)]
+# echo "65535" > /proc/sys/fs/file-max
+
+If you want this new value to survive across reboots you can at it to /etc/sysctl.conf 
+
+# Maximum number of open files permited
+fs.file-max = 65535
+
+Note: that this isn't proc.sys.fs.file-max as one might expect. 
+To list the available parameters that can be modified using sysctl do 
+
+
+% sysctl -a 
+
+To load new values from the sysctl.conf file. 
+
+% sysctl -p /etc/sysctl.conf
+
+
+
+Modify your software to make use of a larger number of open FDs. 
+[Find out where __FD_SETSIZE is defined]
+% grep "#define __FD_SETSIZE" /usr/include/*.h /usr/include/*/*.h
+/usr/include/bits/types.h:#define __FD_SETSIZE  1024
+/usr/include/linux/posix_types.h:#define __FD_SETSIZE   1024
+
+[Make a local copy of these files]
+% cp /usr/include/bits/types.h include/bits/types.h
+% cp /usr/include/linux/posix_types.h include/linux/posix_types.h
+
+[Modify them so that they look something like
+#define __FD_SETSIZE  65535
+
+[Recompile httperf and/or your server so that it uses a larger file
+descriptor set size by using -I include during compliation, this
+will allow the compiler/preprocessor to use the new include files
+rather than the default versions]
+
+
+To check and modify limits per shell. 
+[Using csh: openfiles and descriptors show that the limit here is 1024]
+% limit
+cputime         unlimited
+filesize        unlimited
+datasize        unlimited
+stacksize       8192 kbytes
+coredumpsize    0 kbytes
+memoryuse       unlimited
+descriptors     1024 
+memorylocked    unlimited
+maxproc         8146 
+openfiles       1024 
+
+[To increase this to 65535 for all users (as root)]
+# vi /etc/security/limits.conf
+
+[Modify or add "nofile" (number of file) entries - note
+that a userid can be used in place of *]
+*                soft    nofile          65535
+*                hard    nofile          65535
+
+# vi /etc/pam.d/login
+[Add the line]
+session    required   /lib/security/pam_limits.so
+
+[On many systems this will be sufficient - log in as a regular
+user and try it before doing the following steps]
+
+[These steps may be required depending on how PAM and ssh are configured
+[Note on some systems - Debian?]
+# vi /etc/pam.d/ssh
+[Note on other systems - RedHat]
+# vi /etc/pam.d/sshd
+[Add the line]
+session    required   /lib/security/pam_limits.so
+
+# vi /etc/ssh/sshd_config
+[May need to modify or add the line]
+UsePrivilegeSeparation no
+
+[Restart the ssh daemon]
+[Note on some systems - Debian?]
+# /etc/init.d/ssh reload
+[Note on other systems - RedHat]
+# /etc/rc.d/init.d/sshd reload
+
+
+NOTE: it may still be necessary in some cases to adjust the limits manually.
+
+In tcsh
+limit descriptors 65535
+
+In bash
+ulimit -n 65535
+
+
+
+--------------------------------------------------------------------------------
+
+Created: Wed Jan 22 15:08:58 EST 2003 Last modified: Wed Jan 22 17:07:47 EST 2003 
+

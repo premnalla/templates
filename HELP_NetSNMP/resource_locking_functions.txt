@@ -1,0 +1,38 @@
+
+Functions that provide synchronization for multi-threaded apps
+
+1. snmp_get_next_reqid
+    snmp_res_lock(MT_LIBRARY_ID, MT_LIB_REQUESTID);
+    snmp_res_unlock(MT_LIBRARY_ID, MT_LIB_REQUESTID);
+
+2. snmp_get_next_msgid
+
+3. snmp_get_next_sessid
+
+4. snmp_get_next_transid
+
+5. snmp_open
+
+6. snmp_open_ex
+
+7. snmp_add
+
+8. snmp_add_full
+
+snmp_close
+
+snmp_close_sessions
+
+_sess_async_send
+
+_sess_process_packet
+
+snmp_read
+
+snmp_timeout
+
+snmp_sess_pointer
+
+
+
+

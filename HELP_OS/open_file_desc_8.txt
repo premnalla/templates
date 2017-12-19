@@ -1,0 +1,79 @@
+Hi 
+
+
+> >We're using Linux for the Polygraph clients and servers, and we're 
+> >running out of file descriptors (at 256). We generated a new Linux 
+> >kernel, changing the NR_OPEN define to 1024. (This was in 
+> >include/linux/fs.h). We're new to Linux, and we've since discovered a 
+> >much easier way, but that's another topic. 
+
+
+Alan Cox's pre-patches (available in the 'people' subdirectory of your 
+nearest kernel.org mirror) allow 1024*1024 fd's per process. You use 
+'ulimit -Hn' to set the right value. 
+
+
+(1048576 filedescriptors per process ought to be enough for anybody) 
+
+
+Don't do this on a box with a small amount of ram... the fd tables 
+do use memory. I killed my box (16Mb ram) by trying the below. 
+That's what Ulimit's are for anyway :) 
+
+
+Increase your overall system-wide limits: 
+vi:~ # echo 2000000 > /proc/sys/fs/file-max 
+vi:~ # echo 6000000 > /proc/sys/fs/inode-max 
+(should be about 3* your other limit) 
+
+
+Then set your bash limits to match: 
+
+
+vi:~ # ulimit -Hn 1000000 
+vi:~ # ulimit -n 1000000 
+vi:~ # ulimit -a 
+core file size (blocks) 65536 
+data seg size (kbytes) 65536 
+file size (blocks) unlimited 
+max locked memory (kbytes) 40960 
+max memory size (kbytes) 65536 
+open files 1000000 
+pipe size (512 bytes) 8 
+stack size (kbytes) 40960 
+cpu time (seconds) unlimited 
+max user processes 256 
+virtual memory (kbytes) 655360 
+
+
+Then run this: 
+
+
+#include <stdio.h> 
+#include <errno.h> 
+
+
+main() 
+{ 
+        int s,t; 
+        t = 0; 
+
+
+        for(s = 0;; s++) { 
+                t = open("/dev/null", "ro"); 
+                if (t < 0) { 
+                        printf("%d: %s\n", s, strerror(errno)); 
+                        exit(0); 
+                } 
+        } 
+} 
+
+
+If squid/polygraph don't pick up these changes, let me know... I can 
+try and look at it in about a week - I am working on a large project 
+at the moment. 
+
+
+Oskar 
+
+
