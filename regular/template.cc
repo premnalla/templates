@@ -1,14 +1,6 @@
 
 //********************************************************************
-// Copyright (c) 2000 by Axiowave Networks, Inc. All rights reserved.
-// This software, including  any upgrades, modified versions or updates of
-// the same which may be provided to you by Axiowave Networks, Inc. by
-// license or otherwise (the "Software"), is owned by Axiowave Networks,
-// Inc., and is protected by United States Copyright Law and International
-// Treaty provisions. You agree not to modify, adapt, translate, reverse
-// engineer, decompile, disassemble, or otherwise attempt to discover the
-// source code of the Software.
-//
+// Copyright (c) 2006 Prem Nallasivampillai, All Right Reserved
 //
 //
 // file/class: template.cc
